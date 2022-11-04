@@ -334,4 +334,21 @@ namespace DENSE_MULTICUT {
         return active_nodes;
     }
 
+    std::tuple<std::vector<float>, std::vector<faiss::Index::idx_t>> feature_index::reconstruct_clean_index(const std::vector<faiss::Index::idx_t>& orig_node_ids) const
+    {
+        std::vector<faiss::Index::idx_t> new_node_ids(orig_node_ids);
+        std::vector<float> active_features(nr_active * d);
+        int i_new = 0;
+        for (int i = 0; i != active.size(); ++i)
+        {
+            if (active[i])
+            {
+                new_node_ids[i_new] = orig_node_ids[i];
+                std::copy(features.begin() + i * d, features.begin() + (i + 1) * d, active_features.begin() + (i_new * d));
+                ++i_new;
+            }
+        }
+        return {active_features, new_node_ids};
+    }
+
 }

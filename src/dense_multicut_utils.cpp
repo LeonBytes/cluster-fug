@@ -47,4 +47,26 @@ namespace DENSE_MULTICUT {
         }
         return features_w_dist_offset;
     }
+
+    double labeling_cost(const std::vector<size_t>& labeling, const size_t n, const size_t d, const std::vector<float>& features, const bool track_dist_offset)
+    {
+        double cost = 0.0;
+        const size_t d_eff = track_dist_offset ? d - 1: d;
+        const double offset = features[d - 1] * features[d - 1];
+        for(size_t i=0; i<n; ++i)
+        {
+            const size_t li = labeling[i];
+            for(size_t j=i+1; j<n; ++j)
+            {
+                const size_t lj = labeling[j];
+                if (li == lj) continue;
+                for(size_t l=0; l<d_eff; ++l)
+                    cost += features[i * d + l] * features[j * d + l];
+                if (track_dist_offset)
+                    cost -= offset;
+            }
+        }
+        return cost;
+    }
+
 }

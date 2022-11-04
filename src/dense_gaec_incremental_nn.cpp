@@ -45,14 +45,14 @@ namespace DENSE_MULTICUT {
             }
     };
 
-    std::vector<size_t> dense_gaec_incremental_nn(const size_t n, const size_t d, std::vector<float> features, const size_t k_in, const std::string index_type, const bool track_dist_offset)
+    std::vector<size_t> dense_gaec_incremental_nn(const size_t n, const size_t d, std::vector<float> features, const size_t k_in, const std::string index_str, const bool track_dist_offset)
     {
         MEASURE_FUNCTION_EXECUTION_TIME;
         const size_t k = std::min(n - 1, k_in);
-        feature_index index(d, n, features, index_type, track_dist_offset);
+        feature_index index(d, n, features, index_str, track_dist_offset);
         assert(features.size() == n*d);
 
-        std::cout << "[dense gaec incremental nn] Find multicut for " << n << " nodes with features of dimension " << d << " and feature index type "<<index_type<<"\n";
+        std::cout << "[dense gaec incremental nn] Find multicut for " << n << " nodes with features of dimension " << d << " and feature index type "<<index_str<<"\n";
 
         double multicut_cost = cost_disconnected(n, d, features, track_dist_offset);
 

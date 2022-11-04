@@ -1,4 +1,5 @@
 #include "dense_gaec.h"
+#include "dense_mm.h"
 #include "dense_gaec_parallel.h"
 #include "dense_gaec_adj_matrix.h"
 #include "dense_gaec_incremental_nn.h"
@@ -45,6 +46,10 @@ int main(int argc, char** argv)
         labeling = dense_gaec_flat_index(num_nodes, dim, features, track_dist_offset);
     else if (solver_type ==  "hnsw")
         labeling = dense_gaec_hnsw(num_nodes, dim, features, track_dist_offset);
+    else if (solver_type ==  "mm_flat_index")
+        labeling = dense_mm_flat_index(num_nodes, dim, features, track_dist_offset);
+    else if (solver_type ==  "mm_hnsw")
+        labeling = dense_mm_hnsw(num_nodes, dim, features, track_dist_offset);
     else if (solver_type ==  "parallel_flat_index")
         labeling = dense_gaec_parallel_flat_index(num_nodes, dim, features, track_dist_offset);
     else if (solver_type ==  "parallel_hnsw")
