@@ -91,7 +91,7 @@ namespace DENSE_MULTICUT {
             }
             const auto [distance, ij] = pq.top();
             pq.pop();
-            assert(distance > 0.0);
+            assert(distance >= 0.0);
             const auto [i,j] = ij;
             assert(i != j);
             // check if edge is still present in contracted graph. This is true if both endpoints have not been contracted

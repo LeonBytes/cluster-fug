@@ -35,6 +35,7 @@ int main(int argc, char** argv)
     std::tie(features, num_nodes, dim) = read_file(file_path);
     if (dist_offset != 0.0)
     {
+        std::cout << "[dense multicut] use distance offset\n";
         features = append_dist_offset_in_features(features, dist_offset, num_nodes, dim);
         dim += 1;
         track_dist_offset = true;
@@ -59,7 +60,7 @@ int main(int argc, char** argv)
     else if (solver_type ==  "inc_nn_flat")
         labeling = dense_gaec_incremental_nn(num_nodes, dim, features, k_inc_nn, "Flat", track_dist_offset);
     else if (solver_type ==  "inc_nn_hnsw")
-        labeling = dense_gaec_incremental_nn(num_nodes, dim, features, k_inc_nn, "HNSW", track_dist_offset);
+        labeling = dense_gaec_incremental_nn(num_nodes, dim, features, k_inc_nn, "HNSW64", track_dist_offset);
     else
         throw std::runtime_error("Unknown solver type: " + solver_type);
     
