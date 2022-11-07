@@ -77,45 +77,65 @@ namespace DENSE_MULTICUT {
         }
         const size_t max_pq_size = pq.size() * 10;
 
-        // iteratively find pairs of features with highest inner product
         bool completed = false;
-        while(!pq.empty() || !completed) {
+        std::vector<char> forbidden_nodes(max_nr_ids, false);
+        while (!completed)
+        {        
+            while(!pq.empty()) 
+            {
+                const auto [distance, ij] = pq.top();
+                pq.pop();
+                assert(distance >= 0.0);
+                const auto [i,j] = ij;
+                assert(i != j);
+                if(index.node_active(i) && index.node_active(j) && !forbidden_nodes[i] && !forbidden_nodes[j])
+                {
+                    forbidden_nodes[i] = true;
+                    forbidden_nodes[j] = true;
+                    const size_t new_id = index.merge(i, j, false);
+
+                    uf.merge(i, new_id);
+                    uf.merge(j, new_id);
+                    const std::unordered_map<size_t, float> nn_ij = nn_graph.merge_nodes(i, j, new_id, index, false);
+                    multicut_cost -= distance;
+                    std::cout << "[dense gaec] contracting edge " << i << " and " << j << " with edge cost " << distance << ", multicut_cost "<< multicut_cost <<"\n";
+
+                    if(index.nr_nodes() > 1)
+                        for (auto const& [nn_new, new_cost] : nn_ij)
+                            pq.push({new_cost, {new_id, nn_new}});
+                    completed = false;
+                }
+                // if (pq.size() > max_pq_size)
+                // {
+                //     std::cout<<"[dense gaec incremental nn] cleaning-up PQ with size: "<<pq.size();
+                //     pq.remove_invalid(index);
+                //     std::cout<<", new PQ size: "<<pq.size()<<"\n";
+                // }
+            }
+
+            // Rebuild feature_index and insert NNs into PQ:
+            std::cout<<"Objective: "<<multicut_cost<<". Number of clusters: "<<index.nr_nodes()<<".\n";
+            auto insert_into_pq = [&](std::vector<std::tuple<size_t, size_t, float>> edges) {
+                for (const auto [i, j, cost]: edges)
+                {
+                    assert(index.node_active(i));
+                    assert(index.node_active(j));
+                    pq.push({cost, {i, j}});
+                    forbidden_nodes[i] = false;
+                    forbidden_nodes[j] = false;
+                }
+            };
+            insert_into_pq(nn_graph.find_existing_contractions(index));
+            // if ((index.nr_nodes() < 0.9f * index.max_id_nr() && index.nr_nodes() > 1000) || pq.size() == 0)
             if (pq.size() == 0)
             {
-                const std::vector<std::tuple<size_t, size_t, float>> remaining_edges = nn_graph.recheck_possible_contractions(index);
-                for (const auto [i, j, cost]: remaining_edges)
-                    pq.push({cost, {i, j}});
-                std::cout<<"Found "<<pq.size()<<" leftover contractions.\n";
-                completed = pq.size() == 0;
-                continue;
+                index.reconstruct_clean_index();
+                std::cout<<"Reconstructed index with "<<index.nr_nodes()<<" nodes.\n";
+                insert_into_pq(nn_graph.compute_new_contractions(index));
             }
-            const auto [distance, ij] = pq.top();
-            pq.pop();
-            assert(distance >= 0.0);
-            const auto [i,j] = ij;
-            assert(i != j);
-            // check if edge is still present in contracted graph. This is true if both endpoints have not been contracted
-            if(index.node_active(i) && index.node_active(j))
-            {
-                // std::cout << "[dense gaec incremental nn] contracting edge " << i << " and " << j << " with edge cost " << distance << "\n";
-                // contract edge:
-                const size_t new_id = index.merge(i,j);
 
-                uf.merge(i, new_id);
-                uf.merge(j, new_id);
-                const std::unordered_map<size_t, float> nn_ij = nn_graph.merge_nodes(i, j, new_id, index);
-                multicut_cost -= distance;
-                // find new nearest neighbor
-                if(index.nr_nodes() > 1)
-                    for (auto const& [nn_new, new_cost] : nn_ij)
-                        pq.push({new_cost, {new_id, nn_new}});
-            }
-            if (pq.size() > max_pq_size)
-            {
-                std::cout<<"[dense gaec incremental nn] cleaning-up PQ with size: "<<pq.size();
-                pq.remove_invalid(index);
-                std::cout<<", new PQ size: "<<pq.size()<<"\n";
-            }
+            std::cout<<"Found "<<pq.size()<<" leftover contractions.\n";
+            completed = pq.size() == 0;
         }
 
         std::cout << "[dense gaec incremental nn] final nr clusters = " << uf.count() - (max_nr_ids - index.max_id_nr()-1) << "\n";
@@ -124,6 +144,8 @@ namespace DENSE_MULTICUT {
         std::vector<size_t> component_labeling(n);
         for(size_t i=0; i<n; ++i)
             component_labeling[i] = uf.find(i);
+
+        // std::cout << "[dense gaec incremental nn] final multicut computed cost = " << labeling_cost(component_labeling, n, d, features, track_dist_offset) << "\n";
         return component_labeling;
     }
 }

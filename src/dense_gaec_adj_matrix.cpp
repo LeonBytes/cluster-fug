@@ -92,10 +92,10 @@ namespace DENSE_MULTICUT {
             if(e_q.stamp < edge_stamp(i,j) || active[i] == false | active[j] == false)
                 continue;
 
-            //std::cout << "[dense multicut adjacency matrix] contracting edge " << i << " and " << j << " with edge cost " << edge_cost(i,j) << "\n";
 
             uf.merge(i,j);
             multicut_cost -= edge_cost(i,j);
+            std::cout << "[dense multicut adjacency matrix] contracting edge " << i << " and " << j << " with edge cost " << edge_cost(i,j) << ", multicut_cost "<< multicut_cost <<", stamp "<< edge_stamp(i,j) <<"\n";
             active[j] = false;
 
             // contract edge
@@ -123,6 +123,9 @@ namespace DENSE_MULTICUT {
         std::vector<size_t> cc_ids(n);
         for(size_t i=0; i<n; ++i)
             cc_ids[i] = uf.find(i);
+
+        // std::cout << "[dense gaec incremental nn] final multicut computed cost = " << labeling_cost(cc_ids, n, d, features, track_dist_offset) << "\n";
+
         return cc_ids; 
     }
 

@@ -39,7 +39,7 @@ namespace DENSE_MULTICUT {
         }
     }
 
-    std::unordered_map<size_t, float> incremental_nns::merge_nodes(const size_t i, const size_t j, const size_t new_id, const feature_index& index)
+    std::unordered_map<size_t, float> incremental_nns::merge_nodes(const size_t i, const size_t j, const size_t new_id, const feature_index& index, const bool do_exhaustive_search)
     {
         MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
         const size_t root = nn_graph_[i].size() >= nn_graph_[j].size() ? i: j;
@@ -106,23 +106,23 @@ namespace DENSE_MULTICUT {
         }
             
         // If no new neighbours are found within KNNs of i and j, then search in whole graph for current_k many nearest neighbours.
-        if ((nn_ij.size() == 0 || largest_distance < upper_bound_outside_knn_ij) && index.nr_nodes() > 1)
+        if (do_exhaustive_search && (nn_ij.size() == 0 || largest_distance < upper_bound_outside_knn_ij) && index.nr_nodes() > 1)
         {
             const std::vector<faiss::Index::idx_t> new_id_to_search = {new_id};
             const auto [nns, distances] = index.get_nearest_nodes(new_id_to_search, std::min(current_k, index.nr_nodes() - 1));
             for (int idx = 0; idx != nns.size(); ++idx)
             {
                 const float current_distance = distances[idx];
-                if (current_distance > 0.0)
+                if (current_distance >= 0.0)
                     nn_ij.push_back({nns[idx], current_distance});
             }
             std::cout<<"[incremental nns] Performing exhaustive search on "<<index.nr_nodes()<<" nodes. ";
             std::cout<<"Found inc. neighbours: "<<nn_ij.size()<<", with max. cost: "<<largest_distance<<", UB: "<<upper_bound_outside_knn_ij<<"\n";
         }
 
-        // TODO: Remove root and other nodes? Perhaps not necessary since root and other node become 'inactive' anyway.
-        // nn_graph_[root] = std::unordered_map<size_t, float>();
-        // nn_graph_[other] = std::unordered_map<size_t, float>();
+        // Remove root and other nodes.
+        nn_graph_[root].clear();
+        nn_graph_[other].clear();
 
         // Also add bidirectional edges:
         for (auto const& [nn_new, new_dist] : nn_ij)
@@ -139,7 +139,23 @@ namespace DENSE_MULTICUT {
         return nn_ij_map;
     }
 
-    std::vector<std::tuple<size_t, size_t, float>> incremental_nns::recheck_possible_contractions(const feature_index& index)
+    std::vector<std::tuple<size_t, size_t, float>> incremental_nns::find_existing_contractions(const feature_index& index)
+    {
+        std::vector<std::tuple<size_t, size_t, float>> new_edges;
+        const std::vector<faiss::Index::idx_t> active_nodes = index.get_active_nodes();
+        if (active_nodes.size() == 1)
+            return new_edges;
+
+        // First check in existing NN graph for contraction edges:
+        for (const auto i: active_nodes)
+            for (auto const& [j, distance] : nn_graph_[i])
+                if (index.node_active(j) && distance >= 0)
+                    new_edges.push_back({i, j, distance});
+
+        return new_edges;
+    }
+
+    std::vector<std::tuple<size_t, size_t, float>> incremental_nns::compute_new_contractions(const feature_index& index)
     {
         std::vector<std::tuple<size_t, size_t, float>> new_edges;
         const std::vector<faiss::Index::idx_t> active_nodes = index.get_active_nodes();
@@ -158,7 +174,7 @@ namespace DENSE_MULTICUT {
             {
                 const float current_distance = distances[index_1d];
                 const size_t j = nns[index_1d];
-                if (current_distance < 0 || !index.node_active(j))
+                if (current_distance <= 0 || !index.node_active(j))
                     continue;
 
                 new_edges.push_back({i, j, current_distance});

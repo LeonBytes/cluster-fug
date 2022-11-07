@@ -36,8 +36,6 @@ namespace DENSE_MULTICUT {
         union_find uf(max_nr_ids);
 
         std::vector<char> forbidden_nodes(max_nr_ids, 0);
-        std::vector<faiss::Index::idx_t> orig_node_ids(max_nr_ids);
-        std::iota(orig_node_ids.begin(), orig_node_ids.end(), 0);
 
         using pq_type = std::tuple<float, std::array<faiss::Index::idx_t,2>>;
         auto pq_comp = [](const pq_type& a, const pq_type& b) { return std::get<0>(a) < std::get<0>(b); };
@@ -56,7 +54,6 @@ namespace DENSE_MULTICUT {
         }
 
         bool terminate = false;
-        size_t vacant_node_id = n;
         while (!terminate)
         {
             terminate = true;
@@ -72,41 +69,34 @@ namespace DENSE_MULTICUT {
 
                 forbidden_nodes[i] = 1;
                 forbidden_nodes[j] = 1;
-                const size_t new_id = index.merge(i, j); // new_id is computed w.r.t subset of nodes.
-                assert(new_id == vacant_node_id);
+                const size_t new_id = index.merge(i, j);
 
-                orig_node_ids[new_id] = orig_node_ids[vacant_node_id];
-                uf.merge(orig_node_ids[i], vacant_node_id);
-                uf.merge(orig_node_ids[j], vacant_node_id);
+                uf.merge(i, new_id);
+                uf.merge(j, new_id);
 
-                vacant_node_id++;
                 multicut_cost -= distance;
                 terminate = false;
             }
-            std::cout<<"Objective: "<<multicut_cost<<"\n";
             // Rebuild feature_index and insert NNs into PQ:
             std::vector<faiss::Index::idx_t> active_nodes;
-            if (index.nr_nodes() < 0.8f * index.max_id_nr() && false)
+            if (index.nr_nodes() < 0.9f * index.max_id_nr() && index.nr_nodes() > 1000)
             {
-                const auto new_index_data = index.reconstruct_clean_index(orig_node_ids);
-                const std::vector<float> new_features = std::get<0>(new_index_data);
-                orig_node_ids = std::get<1>(new_index_data);
-                std::cout<<"Objective: "<<multicut_cost<<". Reconstructing index with "<<index.nr_nodes()<<" nodes.\n";
-
-                index = feature_index(d, index.nr_nodes(), new_features, index_str, track_dist_offset);
-                active_nodes = std::vector<faiss::Index::idx_t>(index.nr_nodes());
-                std::iota(active_nodes.begin(), active_nodes.end(), 0);
+                index.reconstruct_clean_index();
+                std::cout<<"Objective: "<<multicut_cost<<". Reconstructed index with "<<index.nr_nodes()<<" nodes.\n";
             }
             else
                 active_nodes = index.get_active_nodes();
-            std::fill(forbidden_nodes.begin(), forbidden_nodes.end(), 0);
             const auto [nns, distances] = index.get_nearest_nodes(active_nodes);
-            for(const auto i: active_nodes)
+            for(size_t idx = 0; idx != active_nodes.size(); ++idx)
             {
-                assert(i < max_nr_ids);
-                assert(nns[i] < max_nr_ids);
-                if(distances[i] > 0.0)
-                    pq.push({distances[i], {i,nns[i]}});
+                const auto i = active_nodes[idx];
+                if(distances[idx] > 0.0)
+                {
+                    const auto j = nns[idx];
+                    pq.push({distances[idx], {i, j}});
+                    forbidden_nodes[i] = 0;
+                    forbidden_nodes[j] = 0;
+                }
             }
         }
         std::cout << "[dense mm " << index_str << "] final nr clusters = " << uf.count() - (max_nr_ids - index.max_id_nr()-1) << "\n";
