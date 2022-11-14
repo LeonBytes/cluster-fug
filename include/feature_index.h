@@ -11,7 +11,7 @@ namespace DENSE_MULTICUT {
             feature_index(const size_t d, const size_t n, const std::vector<float>& _features, const std::string& index_str, const bool track_dist_offset = false);
 
             void remove(const faiss::Index::idx_t i);
-            faiss::Index::idx_t merge(const faiss::Index::idx_t i, const faiss::Index::idx_t j, const bool add_to_index = false);
+            faiss::Index::idx_t merge(const faiss::Index::idx_t i, const faiss::Index::idx_t j, const bool add_to_index = true);
             double inner_product(const faiss::Index::idx_t i, const faiss::Index::idx_t j) const;
             std::tuple<std::vector<faiss::Index::idx_t>, std::vector<float>> get_nearest_nodes(const std::vector<faiss::Index::idx_t>& nodes) const;
             std::tuple<std::vector<faiss::Index::idx_t>, std::vector<float>> get_nearest_nodes(const std::vector<faiss::Index::idx_t>& nodes, const size_t k) const;

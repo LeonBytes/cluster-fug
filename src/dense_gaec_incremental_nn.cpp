@@ -89,7 +89,7 @@ namespace DENSE_MULTICUT {
                 assert(i != j);
                 if(index.node_active(i) && index.node_active(j))
                 {
-                    const size_t new_id = index.merge(i, j, false);
+                    const size_t new_id = index.merge(i, j, false); // Do not add to index, since new index is going to be built anyway.
 
                     uf.merge(i, new_id);
                     uf.merge(j, new_id);
