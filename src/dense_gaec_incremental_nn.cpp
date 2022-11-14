@@ -78,7 +78,6 @@ namespace DENSE_MULTICUT {
         const size_t max_pq_size = pq.size() * 10;
 
         bool completed = false;
-        std::vector<char> forbidden_nodes(max_nr_ids, false);
         while (!completed)
         {        
             while(!pq.empty()) 
@@ -88,17 +87,14 @@ namespace DENSE_MULTICUT {
                 assert(distance >= 0.0);
                 const auto [i,j] = ij;
                 assert(i != j);
-                if(index.node_active(i) && index.node_active(j) && !forbidden_nodes[i] && !forbidden_nodes[j])
+                if(index.node_active(i) && index.node_active(j))
                 {
-                    forbidden_nodes[i] = true;
-                    forbidden_nodes[j] = true;
                     const size_t new_id = index.merge(i, j, false);
 
                     uf.merge(i, new_id);
                     uf.merge(j, new_id);
                     const std::unordered_map<size_t, float> nn_ij = nn_graph.merge_nodes(i, j, new_id, index, false);
                     multicut_cost -= distance;
-                    std::cout << "[dense gaec] contracting edge " << i << " and " << j << " with edge cost " << distance << ", multicut_cost "<< multicut_cost <<"\n";
 
                     if(index.nr_nodes() > 1)
                         for (auto const& [nn_new, new_cost] : nn_ij)
@@ -115,14 +111,12 @@ namespace DENSE_MULTICUT {
 
             // Rebuild feature_index and insert NNs into PQ:
             std::cout<<"Objective: "<<multicut_cost<<". Number of clusters: "<<index.nr_nodes()<<".\n";
-            auto insert_into_pq = [&](std::vector<std::tuple<size_t, size_t, float>> edges) {
+            auto insert_into_pq = [&](const std::vector<std::tuple<size_t, size_t, float>>& edges) {
                 for (const auto [i, j, cost]: edges)
                 {
                     assert(index.node_active(i));
                     assert(index.node_active(j));
                     pq.push({cost, {i, j}});
-                    forbidden_nodes[i] = false;
-                    forbidden_nodes[j] = false;
                 }
             };
             insert_into_pq(nn_graph.find_existing_contractions(index));
@@ -138,7 +132,7 @@ namespace DENSE_MULTICUT {
             completed = pq.size() == 0;
         }
 
-        std::cout << "[dense gaec incremental nn] final nr clusters = " << uf.count() - (max_nr_ids - index.max_id_nr()-1) << "\n";
+        std::cout << "[dense gaec incremental nn] final nr clusters = " << index.nr_nodes() << "\n";
         std::cout << "[dense gaec incremental nn] final multicut cost = " << multicut_cost << "\n";
 
         std::vector<size_t> component_labeling(n);

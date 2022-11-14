@@ -1,6 +1,8 @@
 #include "feature_index.h"
 #include "time_measure_util.h"
 #include <faiss/index_factory.h>
+#include <faiss/gpu/StandardGpuResources.h>
+#include <faiss/gpu/GpuCloner.h>
 #include <faiss/impl/AuxIndexStructures.h>
 #include <cassert>
 #include <numeric>
@@ -18,6 +20,24 @@ namespace DENSE_MULTICUT {
         track_dist_offset_(track_dist_offset),
         index_str(_index_str)
     {
+        int ngpus = faiss::gpu::getNumDevices();
+        printf("Number of GPUs: %d\n", ngpus);
+        if (ngpus > 0 && _index_str == "Flat")
+        {
+            try
+            {
+                faiss::gpu::StandardGpuResources res;
+                // make it into a gpu index
+                index = faiss::gpu::index_cpu_to_gpu(&res, 0, index);
+                std::cout<<"Using GPU index.\n";
+            }
+            catch(const std::exception& e)
+            {
+                std::cerr << e.what() << '\n';
+                std::cout<<"Not using GPU index\n.";
+            }            
+        }
+
         index->train(n, features.data());
         {
             MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME2("faiss add");
@@ -341,7 +361,8 @@ namespace DENSE_MULTICUT {
             }
         }
         std::swap(features, active_features);
-        index.reset(index_factory(d, index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT));
+        // index.reset(index_factory(d, index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT));
+        index = index_factory(d, index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT);
         index->train(nr_active, features.data());
         active.resize(nr_active);
         std::fill(active.begin(), active.end(), true);        

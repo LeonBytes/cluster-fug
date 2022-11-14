@@ -7,9 +7,6 @@ target_link_libraries(dense_multicut_utils dense-multicut)
 add_library(dense_gaec dense_gaec.cpp)
 target_link_libraries(dense_gaec PRIVATE faiss dense-multicut dense_multicut_utils feature_index)
 
-add_library(dense_mm dense_mm.cpp)
-target_link_libraries(dense_mm PRIVATE faiss dense-multicut dense_multicut_utils feature_index)
-
 add_library(dense_gaec_parallel dense_gaec_parallel.cpp)
 target_link_libraries(dense_gaec_parallel PRIVATE faiss dense-multicut dense_multicut_utils feature_index)
 
@@ -25,4 +22,7 @@ target_link_libraries(dense_gaec_incremental_nn PRIVATE incremental_nns faiss de
 add_library(dense_features_parser dense_features_parser.cpp)
 
 add_executable(dense_multicut_text_input dense_multicut_text_input.cpp)
-target_link_libraries(dense_multicut_text_input PRIVATE dense_features_parser dense-multicut faiss dense_gaec dense_mm dense_gaec_parallel dense_gaec_adj_matrix dense_gaec_incremental_nn)
+target_link_libraries(dense_multicut_text_input PRIVATE dense_features_parser dense-multicut faiss dense_gaec dense_gaec_parallel dense_gaec_adj_matrix dense_gaec_incremental_nn)
+
+pybind11_add_module(dense_multicut_py dense_multicut_py.cpp)
+target_link_libraries(dense_multicut_py PRIVATE dense_gaec dense_gaec_parallel dense_gaec_adj_matrix dense_gaec_incremental_nn dense_multicut_utils) 

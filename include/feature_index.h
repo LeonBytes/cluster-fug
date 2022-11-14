@@ -27,7 +27,8 @@ namespace DENSE_MULTICUT {
             faiss::Index::idx_t get_internal_to_orig_node_mapping(const faiss::Index::idx_t i) const;
         private:
             size_t d;
-            std::unique_ptr<faiss::Index> index;
+            // std::unique_ptr<faiss::Index> index;
+            faiss::Index* index;
             std::vector<float> features;
             std::vector<char> active;
             std::vector<faiss::Index::idx_t> internal_to_orig_node_mapping;

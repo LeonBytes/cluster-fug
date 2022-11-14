@@ -50,7 +50,7 @@ namespace DENSE_MULTICUT {
                 {
                     pq.push({distances[i], {i,nns[i]}});
                     pq_pair[nns[i]].push_back(i);
-                    //std::cout << "[dense gaec] push initial shortest edge " << i << " <-> " << nns << " with cost " << distance << "\n";
+                    //std::cout << "[dense gaec] push initial shortest edge " << i << " <-> " << nns[i] << " with cost " << distances[i] << "\n";
                 }
             }
         }

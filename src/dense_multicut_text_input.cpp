@@ -1,5 +1,4 @@
 #include "dense_gaec.h"
-#include "dense_mm.h"
 #include "dense_gaec_parallel.h"
 #include "dense_gaec_adj_matrix.h"
 #include "dense_gaec_incremental_nn.h"
@@ -14,7 +13,6 @@ using namespace DENSE_MULTICUT;
 int main(int argc, char** argv)
 {
     CLI::App app("Dense multicut solvers");
-    std::vector<std::string> available_solvers{"adj_matrix","flat_index", "hnsw", "parallel_flat_index", "parallel_hnsw"};
 
     std::string file_path, solver_type;
     std::string out_path = "";
@@ -47,16 +45,10 @@ int main(int argc, char** argv)
         labeling = dense_gaec_flat_index(num_nodes, dim, features, track_dist_offset);
     else if (solver_type ==  "hnsw")
         labeling = dense_gaec_hnsw(num_nodes, dim, features, track_dist_offset);
-    else if (solver_type ==  "mm_flat_index")
-        labeling = dense_mm_flat_index(num_nodes, dim, features, track_dist_offset);
-    else if (solver_type ==  "mm_hnsw")
-        labeling = dense_mm_hnsw(num_nodes, dim, features, track_dist_offset);
     else if (solver_type ==  "parallel_flat_index")
         labeling = dense_gaec_parallel_flat_index(num_nodes, dim, features, track_dist_offset);
     else if (solver_type ==  "parallel_hnsw")
         labeling = dense_gaec_parallel_hnsw(num_nodes, dim, features, track_dist_offset);
-    else if (solver_type ==  "flat_index")
-        labeling = dense_gaec_flat_index(num_nodes, dim, features, track_dist_offset);
     else if (solver_type ==  "inc_nn_flat")
         labeling = dense_gaec_incremental_nn(num_nodes, dim, features, k_inc_nn, "Flat", track_dist_offset);
     else if (solver_type ==  "inc_nn_hnsw")
