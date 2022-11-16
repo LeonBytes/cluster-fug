@@ -20,23 +20,25 @@ namespace DENSE_MULTICUT {
         track_dist_offset_(track_dist_offset),
         index_str(_index_str)
     {
-        int ngpus = faiss::gpu::getNumDevices();
-        printf("Number of GPUs: %d\n", ngpus);
-        if (ngpus > 0 && _index_str == "Flat")
-        {
-            try
+        #ifdef FAISS_ENABLE_GPU
+            int ngpus = faiss::gpu::getNumDevices();
+            printf("Number of GPUs: %d\n", ngpus);
+            if (ngpus > 0 && _index_str == "Flat")
             {
-                faiss::gpu::StandardGpuResources res;
-                // make it into a gpu index
-                index = faiss::gpu::index_cpu_to_gpu(&res, 0, index);
-                std::cout<<"Using GPU index.\n";
+                try
+                {
+                    faiss::gpu::StandardGpuResources res;
+                    // make it into a gpu index
+                    index = faiss::gpu::index_cpu_to_gpu(&res, 0, index);
+                    std::cout<<"Using GPU index.\n";
+                }
+                catch(const std::exception& e)
+                {
+                    std::cerr << e.what() << '\n';
+                    std::cout<<"Not using GPU index\n.";
+                }            
             }
-            catch(const std::exception& e)
-            {
-                std::cerr << e.what() << '\n';
-                std::cout<<"Not using GPU index\n.";
-            }            
-        }
+        #endif
 
         index->train(n, features.data());
         {
@@ -103,6 +105,7 @@ namespace DENSE_MULTICUT {
             const size_t nr_lookups = std::min(_nr_lookups, size_t(index->ntotal));
             if (node_map.size() > 0)
             {
+                // std::cout << "[feature index get_nearest_nodes] nr lookups = " << nr_lookups << ", num nodes = "<<node_map.size()<<"\n";
                 std::vector<faiss::Index::idx_t> cur_nodes;
                 for (const auto [node, idx] : node_map)
                     cur_nodes.push_back(node);

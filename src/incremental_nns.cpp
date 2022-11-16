@@ -34,7 +34,6 @@ namespace DENSE_MULTICUT {
                 nn_graph_[i].try_emplace(j, current_distance);
                 nn_graph_[j].try_emplace(i, current_distance);
                 min_dist_in_knn_[i] = std::min(min_dist_in_knn_[i], current_distance);
-                min_dist_in_knn_[j] = std::min(min_dist_in_knn_[j], current_distance);
             }
         }
     }
@@ -61,9 +60,13 @@ namespace DENSE_MULTICUT {
             if (nn_other_iter != nn_graph_[other].end() && nn_ij.size() < current_k)
             {
                 const float current_dist = cost_root + nn_other_iter->second;
-                assert(current_dist >= upper_bound_outside_knn_ij);
-                largest_distance = std::max(largest_distance, current_dist);
-                nn_ij.push_back({nn_root, current_dist});
+                // Some nodes might not be in argtop-k since both direction edges are added.
+                // So only add nodes which are above the bound.
+                if (current_dist >= upper_bound_outside_knn_ij)
+                {
+                    largest_distance = std::max(largest_distance, current_dist);
+                    nn_ij.push_back({nn_root, current_dist});
+                }
             }
         }
 
@@ -128,7 +131,6 @@ namespace DENSE_MULTICUT {
         for (auto const& [nn_new, new_dist] : nn_ij)
         {
             nn_graph_[nn_new].try_emplace(new_id, new_dist);
-            min_dist_in_knn_[nn_new] = std::min(min_dist_in_knn_[nn_new], new_dist);
             min_dist_in_knn_[new_id] = std::min(min_dist_in_knn_[new_id], new_dist);
         }
 
@@ -149,7 +151,7 @@ namespace DENSE_MULTICUT {
         // First check in existing NN graph for contraction edges:
         for (const auto i: active_nodes)
             for (auto const& [j, distance] : nn_graph_[i])
-                if (index.node_active(j) && distance >= 0)
+                if (index.node_active(j) && distance >= 0 && i > j)
                     new_edges.push_back({i, j, distance});
 
         return new_edges;
