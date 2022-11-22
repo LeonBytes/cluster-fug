@@ -1,5 +1,8 @@
 #include "dense_gaec_incremental_nn.h"
 #include "feature_index.h"
+#include "feature_index_faiss.h"
+#include "feature_index_hnswlib.h"
+#include "feature_index_brute_force.h"
 #include "incremental_nns.h"
 #include "dense_multicut_utils.h"
 #include "union_find.hxx"
@@ -30,7 +33,7 @@ namespace DENSE_MULTICUT {
         public:
             // inherit constructors
             using std::priority_queue<T, Container, Compare>::priority_queue;
-            void remove_invalid(const feature_index& index) {
+            void remove_invalid(const feature_index<T>& index) {
                 std::vector<pq_type> retained_edges;
                 retained_edges.reserve(this->size());
                 for (auto it = this->c.begin(); it != this->c.end();++it)
@@ -45,21 +48,21 @@ namespace DENSE_MULTICUT {
             }
     };
 
-    std::vector<size_t> dense_gaec_incremental_nn(const size_t n, const size_t d, std::vector<float> features, const size_t k_in, const std::string index_str, const bool track_dist_offset)
+    template<typename REAL>
+    std::vector<size_t> dense_gaec_incremental_nn_impl(const size_t n, const size_t d, feature_index<REAL>& index, std::vector<REAL> features, const size_t k_in, const bool track_dist_offset)
     {
         MEASURE_FUNCTION_EXECUTION_TIME;
         const size_t k = std::min(n - 1, k_in);
-        feature_index index(d, n, features, index_str, track_dist_offset);
         assert(features.size() == n*d);
 
-        std::cout << "[dense gaec incremental nn] Find multicut for " << n << " nodes with features of dimension " << d << " and feature index type "<<index_str<<"\n";
+        std::cout << "[dense gaec incremental nn] Find multicut for " << n << " nodes with features of dimension " << d << "\n";
 
         double multicut_cost = cost_disconnected(n, d, features, track_dist_offset);
 
         const size_t max_nr_ids = 2*n;
         union_find uf(max_nr_ids);
 
-        incremental_nns nn_graph;
+        incremental_nns<REAL> nn_graph;
         auto pq_comp = [](const pq_type& a, const pq_type& b) { return std::get<0>(a) < std::get<0>(b); };
         priority_queue_with_deletion<pq_type, std::vector<pq_type>, decltype(pq_comp)> pq(pq_comp);
         {
@@ -93,7 +96,7 @@ namespace DENSE_MULTICUT {
 
                     uf.merge(i, new_id);
                     uf.merge(j, new_id);
-                    const std::unordered_map<size_t, float> nn_ij = nn_graph.merge_nodes(i, j, new_id, index, false);
+                    const std::unordered_map<size_t, REAL> nn_ij = nn_graph.merge_nodes(i, j, new_id, index, false);
                     multicut_cost -= distance;
 
                     if(index.nr_nodes() > 1)
@@ -111,7 +114,7 @@ namespace DENSE_MULTICUT {
 
             // Rebuild feature_index and insert NNs into PQ:
             std::cout<<"Objective: "<<multicut_cost<<". Number of clusters: "<<index.nr_nodes()<<".\n";
-            auto insert_into_pq = [&](const std::vector<std::tuple<size_t, size_t, float>>& edges) {
+            auto insert_into_pq = [&](const std::vector<std::tuple<size_t, size_t, REAL>>& edges) {
                 for (const auto [i, j, cost]: edges)
                 {
                     assert(index.node_active(i));
@@ -142,6 +145,32 @@ namespace DENSE_MULTICUT {
         // std::cout << "[dense gaec incremental nn] final multicut computed cost = " << labeling_cost(component_labeling, n, d, features, track_dist_offset) << "\n";
         return component_labeling;
     }
+
+    std::vector<size_t> dense_gaec_incremental_nn_faiss(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset, const size_t k_in)
+    {
+        std::cout << "Dense GAEC parallel with faiss index: "<<index_str<<"\n";
+        std::unique_ptr<feature_index_faiss> index = std::make_unique<feature_index_faiss>(d, n, features, index_str, track_dist_offset);
+        return dense_gaec_incremental_nn_impl<float>(n, d, *index, features, k_in, track_dist_offset);
+    }
+
+    std::vector<size_t> dense_gaec_incremental_nn_hnswlib(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset, const size_t k_in)
+    {
+        std::cout << "Dense GAEC parallel with hnswlib index: "<<index_str<<"\n";
+        std::unique_ptr<feature_index_hnswlib> index = std::make_unique<feature_index_hnswlib>(d, n, features, index_str, track_dist_offset);
+        return dense_gaec_incremental_nn_impl<float>(n, d, *index, features, k_in, track_dist_offset);
+    }
+
+    template<typename REAL>
+    std::vector<size_t> dense_gaec_incremental_nn_brute_force(const size_t n, const size_t d, std::vector<REAL> features, const bool track_dist_offset, const size_t k_in)
+    {
+        std::cout << "Dense GAEC with brute force\n";
+        std::unique_ptr<feature_index_brute_force<REAL>> index = std::make_unique<feature_index_brute_force<REAL>>(
+                                                                    d, n, features, track_dist_offset);
+        return dense_gaec_incremental_nn_impl<REAL>(n, d, *index, features, k_in, track_dist_offset);
+    }
+
+    template std::vector<size_t> dense_gaec_incremental_nn_brute_force(const size_t, const size_t, std::vector<float>, const bool, const size_t);
+    template std::vector<size_t> dense_gaec_incremental_nn_brute_force(const size_t, const size_t, std::vector<double>, const bool, const size_t);
 }
 
 

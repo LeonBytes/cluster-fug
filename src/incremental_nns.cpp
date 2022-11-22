@@ -7,18 +7,20 @@
 
 namespace DENSE_MULTICUT {
 
-    incremental_nns::incremental_nns(
-        const std::vector<faiss::Index::idx_t>& query_nodes, const std::vector<faiss::Index::idx_t>& nns, const std::vector<float>& nns_distances, const size_t n, const size_t k)
+    template<typename REAL>
+    incremental_nns<REAL>::incremental_nns(
+        const std::vector<faiss::Index::idx_t>& query_nodes, const std::vector<faiss::Index::idx_t>& nns, const std::vector<REAL>& nns_distances, const size_t n, const size_t k)
     {
         // Store as undirected graph.
-        nn_graph_ = std::vector<std::unordered_map<size_t, float>>(2 * n);
-        min_dist_in_knn_ = std::vector<float>(2 * n, std::numeric_limits<float>::infinity());
+        nn_graph_ = std::vector<std::unordered_map<size_t, REAL>>(2 * n);
+        min_dist_in_knn_ = std::vector<REAL>(2 * n, std::numeric_limits<REAL>::infinity());
         k_ = k;
         insert_nn_to_graph(query_nodes, nns, nns_distances, k);
     }
 
-    void incremental_nns::insert_nn_to_graph(
-        const std::vector<faiss::Index::idx_t>& query_nodes, const std::vector<faiss::Index::idx_t>& nns, const std::vector<float>& nns_distances, const size_t k)
+    template<typename REAL>
+    void incremental_nns<REAL>::insert_nn_to_graph(
+        const std::vector<faiss::Index::idx_t>& query_nodes, const std::vector<faiss::Index::idx_t>& nns, const std::vector<REAL>& nns_distances, const size_t k)
     {
         size_t index_1d = 0;
         for (size_t idx = 0; idx != query_nodes.size(); ++idx)
@@ -26,7 +28,7 @@ namespace DENSE_MULTICUT {
             const size_t i = query_nodes[idx];
             for (size_t i_n = 0; i_n != k; ++i_n, ++index_1d)
             {
-                const float current_distance = nns_distances[index_1d];
+                const REAL current_distance = nns_distances[index_1d];
                 if (current_distance < 0)
                     continue;
 
@@ -38,18 +40,19 @@ namespace DENSE_MULTICUT {
         }
     }
 
-    std::unordered_map<size_t, float> incremental_nns::merge_nodes(const size_t i, const size_t j, const size_t new_id, const feature_index& index, const bool do_exhaustive_search)
+    template<typename REAL>
+    std::unordered_map<size_t, REAL> incremental_nns<REAL>::merge_nodes(const size_t i, const size_t j, const size_t new_id, const feature_index<REAL>&index, const bool do_exhaustive_search)
     {
         MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME
         const size_t root = nn_graph_[i].size() >= nn_graph_[j].size() ? i: j;
         const size_t other = root == i ? j : i;
         
         const size_t current_k = 10 * k_; // * index.nr_nodes_in_cluster(i) * index.nr_nodes_in_cluster(j);
-        std::vector<std::pair<size_t, float>> nn_ij;
+        std::vector<std::pair<size_t, REAL>> nn_ij;
 
-        const float upper_bound_outside_knn_ij = min_dist_in_knn_[i] + min_dist_in_knn_[j];
+        const REAL upper_bound_outside_knn_ij = min_dist_in_knn_[i] + min_dist_in_knn_[j];
 
-        float largest_distance = 0.0;
+        REAL largest_distance = 0.0;
         // iterate over kNNs of root:
         for (auto const& [nn_root, cost_root] : nn_graph_[root])
         {
@@ -59,7 +62,7 @@ namespace DENSE_MULTICUT {
             const auto nn_other_iter = nn_graph_[other].find(nn_root);
             if (nn_other_iter != nn_graph_[other].end() && nn_ij.size() < current_k)
             {
-                const float current_dist = cost_root + nn_other_iter->second;
+                const REAL current_dist = cost_root + nn_other_iter->second;
                 // Some nodes might not be in argtop-k since both direction edges are added.
                 // So only add nodes which are above the bound.
                 if (current_dist >= upper_bound_outside_knn_ij)
@@ -78,7 +81,7 @@ namespace DENSE_MULTICUT {
             if (nn_other_iter == nn_graph_[other].end() && nn_ij.size() < current_k)
             {
                 // Compute cost between other and nn_root and add.
-                const float new_dist = cost_root + index.inner_product(nn_root, other); 
+                const REAL new_dist = cost_root + index.inner_product(nn_root, other); 
                 if (new_dist >= upper_bound_outside_knn_ij)
                 {
                     largest_distance = std::max(largest_distance, new_dist);
@@ -97,7 +100,7 @@ namespace DENSE_MULTICUT {
             // Skip if nn_other is also in kNN(root) as already considered above.
             if (nn_graph_[root].find(nn_other) == nn_graph_[root].end() && nn_ij.size() < current_k)
             {
-                const float new_dist = cost_other + index.inner_product(nn_other, root); // Compute cost between root and nn_other and add.
+                const REAL new_dist = cost_other + index.inner_product(nn_other, root); // Compute cost between root and nn_other and add.
                 if (new_dist>= upper_bound_outside_knn_ij)
                 {
                     largest_distance = std::max(largest_distance, new_dist);
@@ -115,7 +118,7 @@ namespace DENSE_MULTICUT {
             const auto [nns, distances] = index.get_nearest_nodes(new_id_to_search, std::min(current_k, index.nr_nodes() - 1));
             for (int idx = 0; idx != nns.size(); ++idx)
             {
-                const float current_distance = distances[idx];
+                const REAL current_distance = distances[idx];
                 if (current_distance >= 0.0)
                     nn_ij.push_back({nns[idx], current_distance});
             }
@@ -134,16 +137,17 @@ namespace DENSE_MULTICUT {
             min_dist_in_knn_[new_id] = std::min(min_dist_in_knn_[new_id], new_dist);
         }
 
-        std::unordered_map<size_t, float> nn_ij_map(nn_ij.begin(), nn_ij.end());
+        std::unordered_map<size_t, REAL> nn_ij_map(nn_ij.begin(), nn_ij.end());
         // Create new node with id 'new_id' and add its neighbours:
         nn_graph_[new_id] = nn_ij_map;
 
         return nn_ij_map;
     }
 
-    std::vector<std::tuple<size_t, size_t, float>> incremental_nns::find_existing_contractions(const feature_index& index)
+    template<typename REAL>
+    std::vector<std::tuple<size_t, size_t, REAL>> incremental_nns<REAL>::find_existing_contractions(const feature_index<REAL>&index)
     {
-        std::vector<std::tuple<size_t, size_t, float>> new_edges;
+        std::vector<std::tuple<size_t, size_t, REAL>> new_edges;
         const std::vector<faiss::Index::idx_t> active_nodes = index.get_active_nodes();
         if (active_nodes.size() == 1)
             return new_edges;
@@ -157,9 +161,10 @@ namespace DENSE_MULTICUT {
         return new_edges;
     }
 
-    std::vector<std::tuple<size_t, size_t, float>> incremental_nns::compute_new_contractions(const feature_index& index)
+    template<typename REAL>
+    std::vector<std::tuple<size_t, size_t, REAL>> incremental_nns<REAL>::compute_new_contractions(const feature_index<REAL>&index)
     {
-        std::vector<std::tuple<size_t, size_t, float>> new_edges;
+        std::vector<std::tuple<size_t, size_t, REAL>> new_edges;
         const std::vector<faiss::Index::idx_t> active_nodes = index.get_active_nodes();
         if (active_nodes.size() == 1)
             return new_edges;
@@ -174,7 +179,7 @@ namespace DENSE_MULTICUT {
             const size_t i = active_nodes[idx];
             for (size_t i_n = 0; i_n != eff_k; ++i_n, ++index_1d)
             {
-                const float current_distance = distances[index_1d];
+                const REAL current_distance = distances[index_1d];
                 const size_t j = nns[index_1d];
                 if (current_distance <= 0 || !index.node_active(j))
                     continue;
@@ -184,4 +189,7 @@ namespace DENSE_MULTICUT {
         }
         return new_edges;
     }
+    
+    template class incremental_nns<float>;
+    template class incremental_nns<double>;
 }

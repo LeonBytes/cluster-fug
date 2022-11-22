@@ -10,7 +10,7 @@ using namespace DENSE_MULTICUT;
 void test_random_problem(const size_t n, const size_t d)
 {
     std::cout << "\n[test dense gaec] test random problem with " << n << " features and " << d << " dimensions\n\n";
-    std::vector<float> features(n*d);
+    std::vector<double> features(n*d);
     std::mt19937 generator(0); // for deterministic behaviour
     std::uniform_real_distribution<float>  distr(-1.0, 1.0);
 

@@ -4,7 +4,8 @@
 
 namespace DENSE_MULTICUT {
 
-    double cost_disconnected(const size_t n, const size_t d, const std::vector<float>& features, const bool track_dist_offset)
+    template<typename REAL>
+    double cost_disconnected(const size_t n, const size_t d, const std::vector<REAL>& features, const bool track_dist_offset)
     {
         const size_t d_eff = track_dist_offset ? d - 1: d;
         std::vector<double> feature_sum(d_eff);
@@ -33,9 +34,10 @@ namespace DENSE_MULTICUT {
         return cost;
     }
 
-    std::vector<float> append_dist_offset_in_features(const std::vector<float>& features, const float dist_offset, const size_t n, const size_t d)
+    template<typename REAL>
+    std::vector<REAL> append_dist_offset_in_features(const std::vector<REAL>& features, const double dist_offset, const size_t n, const size_t d)
     {
-        std::vector<float> features_w_dist_offset(n * (d + 1));
+        std::vector<REAL> features_w_dist_offset(n * (d + 1));
         if (dist_offset < 0)
             throw std::runtime_error("dist_offset can only be >= 0.");
         std::cout << "Accounting for dist_offset = " << dist_offset << " by adding additional feature dimension.\n";
@@ -48,7 +50,8 @@ namespace DENSE_MULTICUT {
         return features_w_dist_offset;
     }
 
-    double labeling_cost(const std::vector<size_t>& labeling, const size_t n, const size_t d, const std::vector<float>& features, const bool track_dist_offset)
+    template<typename REAL>
+    double labeling_cost(const std::vector<size_t>& labeling, const size_t n, const size_t d, const std::vector<REAL>& features, const bool track_dist_offset)
     {
         double cost = 0.0;
         const size_t d_eff = track_dist_offset ? d - 1: d;
@@ -68,5 +71,14 @@ namespace DENSE_MULTICUT {
         }
         return cost;
     }
+
+    template double cost_disconnected<float>(const size_t n, const size_t d, const std::vector<float>& features, const bool track_dist_offset);
+    template double cost_disconnected<double>(const size_t n, const size_t d, const std::vector<double>& features, const bool track_dist_offset);
+
+    template std::vector<float> append_dist_offset_in_features<float>(const std::vector<float>& features, const double dist_offset, const size_t n, const size_t d);
+    template std::vector<double> append_dist_offset_in_features<double>(const std::vector<double>& features, const double dist_offset, const size_t n, const size_t d);
+
+    template double labeling_cost<float>(const std::vector<size_t>& labeling, const size_t n, const size_t d, const std::vector<float>& features, const bool track_dist_offset);
+    template double labeling_cost<double>(const std::vector<size_t>& labeling, const size_t n, const size_t d, const std::vector<double>& features, const bool track_dist_offset);
 
 }

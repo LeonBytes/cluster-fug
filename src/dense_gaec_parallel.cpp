@@ -1,4 +1,7 @@
 #include "feature_index.h"
+#include "feature_index_faiss.h"
+#include "feature_index_brute_force.h"
+#include "feature_index_hnswlib.h"
 #include "dense_gaec_parallel.h"
 #include "maximum_matching_greedy.h"
 #include "dense_multicut_utils.h"
@@ -9,13 +12,13 @@
 
 namespace DENSE_MULTICUT {
 
-    std::vector<size_t> dense_gaec_parallel_impl(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset)
+    template<typename REAL>
+    std::vector<size_t> dense_gaec_parallel_impl(const size_t n, const size_t d, feature_index<REAL>& index, std::vector<REAL> features, const bool track_dist_offset)
     {
         MEASURE_FUNCTION_EXECUTION_TIME;
-        feature_index index(d, n, features, index_str, track_dist_offset);
         assert(features.size() == n*d);
 
-        std::cout << "[dense gaec parallel " << index_str << "] Find multicut for " << n << " nodes with features of dimension " << d << "\n";
+        std::cout << "[dense gaec parallel] Find multicut for " << n << " nodes with features of dimension " << d << "\n";
 
         double multicut_cost = cost_disconnected(n, d, features, track_dist_offset);
 
@@ -71,10 +74,10 @@ namespace DENSE_MULTICUT {
         }
 
         const size_t nr_contracted_edges = n - (uf.count() - (max_nr_ids - index.max_id_nr()-1)); 
-        std::cout << "[dense gaec parallel " << index_str << "] "
+        std::cout << "[dense gaec parallel]"
             << "final nr clusters = " << n - nr_contracted_edges 
             << " after " << iter << " iterations, i.e. " << nr_contracted_edges/double(iter) << " contractions per iteration\n";
-        std::cout << "[dense gaec parallel " << index_str << "] final multicut cost = " << multicut_cost << "\n";
+        std::cout << "[dense gaec parallel] final multicut cost = " << multicut_cost << "\n";
 
         std::vector<size_t> component_labeling(n);
         for(size_t i=0; i<n; ++i)
@@ -82,15 +85,30 @@ namespace DENSE_MULTICUT {
         return component_labeling;
     }
 
-    std::vector<size_t> dense_gaec_parallel_flat_index(const size_t n, const size_t d, std::vector<float> features, const bool track_dist_offset)
+    std::vector<size_t> dense_gaec_parallel_faiss(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset)
     {
-        std::cout << "Dense parallel GAEC with flat index\n";
-        return dense_gaec_parallel_impl(n, d, features, "Flat", track_dist_offset);
+        std::cout << "Dense GAEC parallel with faiss index: "<<index_str<<"\n";
+        std::unique_ptr<feature_index_faiss> index = std::make_unique<feature_index_faiss>(
+                                                        d, n, features, index_str, track_dist_offset);
+        return dense_gaec_parallel_impl<float>(n, d, *index, features, track_dist_offset);
     }
 
-    std::vector<size_t> dense_gaec_parallel_hnsw(const size_t n, const size_t d, std::vector<float> features, const bool track_dist_offset)
+    std::vector<size_t> dense_gaec_parallel_hnswlib(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset)
     {
-        std::cout << "Dense parallel GAEC with HNSW index\n";
-        return dense_gaec_parallel_impl(n, d, features, "HNSW", track_dist_offset);
+        std::cout << "Dense GAEC parallel with hnswlib index: "<<index_str<<"\n";
+        std::unique_ptr<feature_index_hnswlib> index = std::make_unique<feature_index_hnswlib>(
+                                                        d, n, features, index_str, track_dist_offset);
+        return dense_gaec_parallel_impl<float>(n, d, *index, features, track_dist_offset);
     }
+
+    template<typename REAL>
+    std::vector<size_t> dense_gaec_parallel_brute_force(const size_t n, const size_t d, std::vector<REAL> features, const bool track_dist_offset)
+    {
+        std::cout << "Dense GAEC with brute force\n";
+        std::unique_ptr<feature_index_brute_force<REAL>> index = std::make_unique<feature_index_brute_force<REAL>>(
+                                                                    d, n, features, track_dist_offset);
+        return dense_gaec_parallel_impl<REAL>(n, d, *index, features, track_dist_offset);
+    }
+    template std::vector<size_t> dense_gaec_parallel_brute_force(const size_t n, const size_t d, std::vector<float> features, const bool track_dist_offset);
+    template std::vector<size_t> dense_gaec_parallel_brute_force(const size_t n, const size_t d, std::vector<double> features, const bool track_dist_offset);
 }

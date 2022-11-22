@@ -1,5 +1,8 @@
 #include "dense_gaec.h"
 #include "feature_index.h"
+#include "feature_index_faiss.h"
+#include "feature_index_brute_force.h"
+#include "feature_index_hnswlib.h"
 #include "dense_multicut_utils.h"
 #include "union_find.hxx"
 #include "time_measure_util.h"
@@ -22,20 +25,21 @@
 
 namespace DENSE_MULTICUT {
 
-    std::vector<size_t> dense_gaec_impl(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset)
+    template<typename REAL>
+    std::vector<size_t> dense_gaec_impl(const size_t n, const size_t d, feature_index<REAL>& index, std::vector<REAL> features, const bool track_dist_offset)
     {
         MEASURE_FUNCTION_EXECUTION_TIME;
-        feature_index index(d, n, features, index_str, track_dist_offset);
+
         assert(features.size() == n*d);
 
-        std::cout << "[dense gaec " << index_str << "] Find multicut for " << n << " nodes with features of dimension " << d << "\n";
+        std::cout << "[dense gaec] Find multicut for " << n << " nodes with features of dimension " << d << "\n";
 
         double multicut_cost = cost_disconnected(n, d, features, track_dist_offset);
 
         const size_t max_nr_ids = 2*n;
         union_find uf(max_nr_ids);
 
-        using pq_type = std::tuple<float, std::array<faiss::Index::idx_t,2>>;
+        using pq_type = std::tuple<REAL, std::array<faiss::Index::idx_t,2>>;
         auto pq_comp = [](const pq_type& a, const pq_type& b) { return std::get<0>(a) < std::get<0>(b); };
         std::priority_queue<pq_type, std::vector<pq_type>, decltype(pq_comp)> pq(pq_comp);
         std::vector<std::vector<u_int32_t>> pq_pair(max_nr_ids);
@@ -66,7 +70,7 @@ namespace DENSE_MULTICUT {
             // check if edge is still present in contracted graph. This is true if both endpoints have not been contracted
             if(index.node_active(i) && index.node_active(j))
             {
-                //std::cout << "[dense multicut " << index_str << "] contracting edge " << i << " and " << j << " with edge cost " << distance << "\n";
+                //std::cout << "[dense multicut] contracting edge " << i << " and " << j << " with edge cost " << distance << "\n";
                 // contract edge:
                 const size_t new_id = index.merge(i,j);
 
@@ -104,8 +108,8 @@ namespace DENSE_MULTICUT {
             }
         }
 
-        std::cout << "[dense gaec " << index_str << "] final nr clusters = " << uf.count() - (max_nr_ids - index.max_id_nr()-1) << "\n";
-        std::cout << "[dense gaec " << index_str << "] final multicut cost = " << multicut_cost << "\n";
+        std::cout << "[dense gaec] final nr clusters = " << uf.count() - (max_nr_ids - index.max_id_nr()-1) << "\n";
+        std::cout << "[dense gaec] final multicut cost = " << multicut_cost << "\n";
 
         std::vector<size_t> component_labeling(n);
         for(size_t i=0; i<n; ++i)
@@ -113,16 +117,29 @@ namespace DENSE_MULTICUT {
         return component_labeling;
     }
 
-    std::vector<size_t> dense_gaec_flat_index(const size_t n, const size_t d, std::vector<float> features, const bool track_dist_offset)
+    std::vector<size_t> dense_gaec_faiss(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset)
     {
-        std::cout << "Dense GAEC with flat index\n";
-        return dense_gaec_impl(n, d, features, "Flat", track_dist_offset);
+        std::cout << "Dense GAEC with faiss index: "<<index_str<<"\n";
+        std::unique_ptr<feature_index_faiss> index = std::make_unique<feature_index_faiss>(d, n, features, index_str, track_dist_offset);
+        return dense_gaec_impl<float>(n, d, *index, features, track_dist_offset);
     }
 
-    std::vector<size_t> dense_gaec_hnsw(const size_t n, const size_t d, std::vector<float> features, const bool track_dist_offset)
+    std::vector<size_t> dense_gaec_hnswlib(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset)
     {
-        std::cout << "Dense GAEC with HNSW index\n";
-        return dense_gaec_impl(n, d, features, "HNSW", track_dist_offset);
+        std::cout << "Dense GAEC with hnswlib index: "<<index_str<<"\n";
+        std::unique_ptr<feature_index_hnswlib> index = std::make_unique<feature_index_hnswlib>(d, n, features, index_str, track_dist_offset);
+        return dense_gaec_impl<float>(n, d, *index, features, track_dist_offset);
     }
 
+    template<typename REAL>
+    std::vector<size_t> dense_gaec_brute_force(const size_t n, const size_t d, std::vector<REAL> features, const bool track_dist_offset)
+    {
+        std::cout << "Dense GAEC with brute force\n";
+        std::unique_ptr<feature_index_brute_force<REAL>> index = std::make_unique<feature_index_brute_force<REAL>>(
+                                                                    d, n, features, track_dist_offset);
+        return dense_gaec_impl<REAL>(n, d, *index, features, track_dist_offset);
+    }
+
+    template std::vector<size_t> dense_gaec_brute_force(const size_t n, const size_t d, std::vector<float> features, const bool track_dist_offset);
+    template std::vector<size_t> dense_gaec_brute_force(const size_t n, const size_t d, std::vector<double> features, const bool track_dist_offset);
 }

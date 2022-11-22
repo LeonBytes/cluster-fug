@@ -2,4 +2,4 @@ add_executable(test_dense_gaec test_dense_gaec.cpp)
 target_link_libraries(test_dense_gaec PRIVATE dense-multicut faiss dense_gaec dense_gaec_parallel dense_gaec_adj_matrix dense_gaec_incremental_nn)
 
 add_executable(test_feature_index test_feature_index.cpp)
-target_link_libraries(test_feature_index PRIVATE dense-multicut faiss feature_index)
+target_link_libraries(test_feature_index PRIVATE dense-multicut faiss feature_index feature_index_faiss)

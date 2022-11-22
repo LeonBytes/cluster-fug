@@ -4,247 +4,48 @@
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/GpuCloner.h>
 #include <faiss/impl/AuxIndexStructures.h>
+#include <faiss/utils/distances.h>
 #include <cassert>
 #include <numeric>
 #include <algorithm>
 #include <unordered_map>
+#include <queue>
 //#include <iostream>
 
 namespace DENSE_MULTICUT {
 
-    feature_index::feature_index(const size_t _d, const size_t n, const std::vector<float>& _features, const std::string& _index_str, const bool track_dist_offset)
+    template<typename REAL>        
+    feature_index<REAL>::feature_index(const size_t _d, const size_t n, const std::vector<REAL>& _features, const bool track_dist_offset)
         : d(_d),
         features(_features),
-        index(index_factory(d, _index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT)),
         nr_active(n),
-        track_dist_offset_(track_dist_offset),
-        index_str(_index_str)
+        track_dist_offset_(track_dist_offset)
     {
-        #ifdef FAISS_ENABLE_GPU
-            int ngpus = faiss::gpu::getNumDevices();
-            printf("Number of GPUs: %d\n", ngpus);
-            if (ngpus > 0 && _index_str == "Flat")
-            {
-                try
-                {
-                    faiss::gpu::StandardGpuResources res;
-                    // make it into a gpu index
-                    index = faiss::gpu::index_cpu_to_gpu(&res, 0, index);
-                    std::cout<<"Using GPU index.\n";
-                }
-                catch(const std::exception& e)
-                {
-                    std::cerr << e.what() << '\n';
-                    std::cout<<"Not using GPU index\n.";
-                }            
-            }
-        #endif
-
-        index->train(n, features.data());
-        {
-            MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME2("faiss add");
-            index->add(n, features.data());
-        }
-
         active = std::vector<char>(n, true);
         vacant_node = n;
-        internal_to_orig_node_mapping = std::vector<faiss::Index::idx_t>(2 * n);
-        orig_to_internal_node_mapping = std::vector<faiss::Index::idx_t>(2 * n);
+        internal_to_orig_node_mapping = std::vector<idx_t>(2 * n);
+        orig_to_internal_node_mapping = std::vector<idx_t>(2 * n);
         std::iota(internal_to_orig_node_mapping.begin(), internal_to_orig_node_mapping.end(), 0);
         std::iota(orig_to_internal_node_mapping.begin(), orig_to_internal_node_mapping.end(), 0);
         mapping_is_identity = true;
     }
 
-    std::tuple<faiss::Index::idx_t, float> feature_index::get_nearest_node(const faiss::Index::idx_t id_orig)
+    template<typename REAL>
+    void feature_index<REAL>::remove(const idx_t i_orig)
     {
         MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
-        const size_t id = get_orig_to_internal_node_mapping(id_orig);
-        if (track_dist_offset_)
-            features[id * d + d - 1] *= -1.0;
-        faiss::Index::idx_t nearest_node = -1;
-        float nearest_distance = 0.0; 
-        for (size_t nr_lookups = 2; nr_lookups < 2 * index->ntotal && nearest_node == -1; nr_lookups *= 2)
-        {
-            float distance[std::min(nr_lookups, size_t(index->ntotal))];
-            faiss::Index::idx_t nns[std::min(nr_lookups, size_t(index->ntotal))];
-            index->search(1, features.data() + id * d, std::min(nr_lookups, size_t(index->ntotal)), distance, nns);
-            assert(std::is_sorted(distance, distance + std::min(nr_lookups, size_t(index->ntotal)), std::greater<float>()));
-            for (size_t k = 0; k < std::min(nr_lookups, size_t(index->ntotal)); ++k)
-                if (nns[k] < active.size() && nns[k] != id && active[nns[k]] == true)
-                {
-                    nearest_node = get_internal_to_orig_node_mapping(nns[k]);
-                    nearest_distance = distance[k];
-                    break;
-                }
-        }
-        if (nearest_node == -1)
-            throw std::runtime_error("Could not find nearest neighbor");
-
-        if (track_dist_offset_)
-            features[id * d + d - 1] *= -1.0;
-
-        return {nearest_node, nearest_distance};
-    }
-
-    std::tuple<std::vector<faiss::Index::idx_t>, std::vector<float>> feature_index::get_nearest_nodes(const std::vector<faiss::Index::idx_t> &nodes_orig) const
-    {
-        MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME2("faiss get nearest nodes");
-        assert(nodes_orig.size() > 0);
-        //std::cout << "[feature index] search nearest neighbors for " << nodes.size() << " nodes\n";
-
-        std::vector<faiss::Index::idx_t> return_nns(nodes_orig.size());
-        std::vector<float> return_distances(nodes_orig.size());
-
-        std::unordered_map<faiss::Index::idx_t, faiss::Index::idx_t> node_map;
-        node_map.reserve(nodes_orig.size());
-        for (size_t c = 0; c < nodes_orig.size(); ++c)
-            node_map.insert({get_orig_to_internal_node_mapping(nodes_orig[c]), c});
-
-        for (size_t _nr_lookups = 2; _nr_lookups < 2 + 2 * max_id_nr(); _nr_lookups *= 2)
-        {
-            const size_t nr_lookups = std::min(_nr_lookups, size_t(index->ntotal));
-            if (node_map.size() > 0)
-            {
-                // std::cout << "[feature index get_nearest_nodes] nr lookups = " << nr_lookups << ", num nodes = "<<node_map.size()<<"\n";
-                std::vector<faiss::Index::idx_t> cur_nodes;
-                for (const auto [node, idx] : node_map)
-                    cur_nodes.push_back(node);
-                std::vector<faiss::Index::idx_t> nns(cur_nodes.size() * nr_lookups);
-                std::vector<float> distances(cur_nodes.size() * nr_lookups);
-
-                std::vector<float> query_features(node_map.size() * d);
-                for (size_t c = 0; c < cur_nodes.size(); ++c)
-                {
-                    for (size_t l = 0; l < d; ++l)
-                        query_features[c * d + l] = features[cur_nodes[c] * d + l];
-                    if (track_dist_offset_)
-                        query_features[c * d + d - 1] *= -1.0;
-                }
-                {
-                    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME2("faiss search");
-                    index->search(cur_nodes.size(), query_features.data(), nr_lookups, distances.data(), nns.data());
-                }
-
-                for (size_t c = 0; c < cur_nodes.size(); ++c)
-                {
-                    for (size_t k = 0; k < nr_lookups; ++k)
-                    {
-                        if (nns[c * nr_lookups + k] < active.size() && nns[c * nr_lookups + k] != cur_nodes[c] && active[nns[nr_lookups * c + k]] == true)
-                        {
-                            assert(node_map.count(cur_nodes[c]) > 0);
-                            return_nns[node_map[cur_nodes[c]]] = get_internal_to_orig_node_mapping(nns[c * nr_lookups + k]);
-                            return_distances[node_map[cur_nodes[c]]] = distances[c * nr_lookups + k];
-                            node_map.erase(cur_nodes[c]);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-            for(size_t i=0; i<return_nns.size(); ++i)
-                assert(return_nns[i] != nodes_orig[i]);
-            return {return_nns, return_distances};
-    }
-
-    std::tuple<std::vector<faiss::Index::idx_t>, std::vector<float>> feature_index::get_nearest_nodes(const std::vector<faiss::Index::idx_t>& nodes_orig, const size_t k) const
-    {
-        MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME2("faiss get k nearest nodes");
-        assert(k > 0);
-        assert(k < nr_nodes());
-        assert(nodes_orig.size() > 0);
-
-        std::vector<faiss::Index::idx_t> return_nns(k * nodes_orig.size());
-        std::vector<float> return_distances(k * nodes_orig.size());
-
-        std::unordered_map<faiss::Index::idx_t, faiss::Index::idx_t> node_map;
-        std::unordered_map<faiss::Index::idx_t, u_int32_t> nns_count;
-        node_map.reserve(nodes_orig.size());
-        nns_count.reserve(nodes_orig.size());
-        for (size_t c = 0; c < nodes_orig.size(); ++c)
-        {
-            node_map.insert({get_orig_to_internal_node_mapping(nodes_orig[c]), c});
-            nns_count.insert({get_orig_to_internal_node_mapping(nodes_orig[c]), 0});
-        }
-
-        for(size_t _nr_lookups=k+1; _nr_lookups<2+2*max_id_nr(); _nr_lookups*=2)
-        {
-            const size_t nr_lookups = std::min(_nr_lookups, size_t(index->ntotal));
-            //std::cout << "[feature index get_nearest_nodes] nr lookups = " << nr_lookups << "\n";
-            if(node_map.size() > 0)
-            {
-                std::vector<faiss::Index::idx_t> cur_nodes;
-                for(const auto [node, idx] : node_map)
-                    cur_nodes.push_back(node);
-                std::vector<faiss::Index::idx_t> nns(cur_nodes.size() * nr_lookups);
-                std::vector<float> distances(cur_nodes.size() * nr_lookups);
-
-                std::vector<float> query_features(node_map.size()*d);
-                for(size_t c=0; c<cur_nodes.size(); ++c)
-                {
-                    for(size_t l=0; l<d; ++l)
-                        query_features[c*d + l] = features[cur_nodes[c]*d + l];
-                    if(track_dist_offset_)
-                        query_features[c*d + d-1] *= -1.0;
-                }
-
-                {
-                    MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME2("faiss search");
-                    index->search(cur_nodes.size(), query_features.data(), nr_lookups, distances.data(), nns.data());
-                }
-
-                for(size_t c=0; c<cur_nodes.size(); ++c)
-                {
-                    size_t nns_count = 0;
-                    for(size_t l=0; l<nr_lookups; ++l)
-                    {
-                        if(nns[c*nr_lookups + l] >= 0 && nns[c*nr_lookups + l] < active.size() && nns[c*nr_lookups + l] != cur_nodes[c] && active[nns[nr_lookups*c + l]] == true)
-                        {
-                            assert(node_map.count(cur_nodes[c]) > 0);
-                            return_nns[node_map[cur_nodes[c]] * k + nns_count] = get_internal_to_orig_node_mapping(nns[c*nr_lookups + l]);
-                            return_distances[node_map[cur_nodes[c]] * k + nns_count] = distances[c*nr_lookups + l];
-                            nns_count++;
-                            if(nns_count == k)
-                            {
-                                node_map.erase(cur_nodes[c]);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        for(size_t i=0; i<nodes_orig.size(); ++i)
-        {
-            for(size_t l=0; l<k; ++l)
-            {
-                assert(return_nns[i*k + l] != nodes_orig[i]);
-                assert(return_nns[i*k + l] != -1);
-            }
-            for(size_t l=0; l+1<k; ++l)
-            {
-                assert(return_distances[i*k + l] >= return_distances[i*k + l+1]);
-            }
-        }
-        return {return_nns, return_distances};
-    }
-
-    void feature_index::remove(const faiss::Index::idx_t i_orig)
-    {
-        MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
-        const faiss::Index::idx_t i = get_orig_to_internal_node_mapping(i_orig);
+        const idx_t i = get_orig_to_internal_node_mapping(i_orig);
         assert(i < active.size());
         assert(active[i] == true);
         active[i] = false;
         nr_active--;
     }
 
-    faiss::Index::idx_t feature_index::merge(const faiss::Index::idx_t i_orig, const faiss::Index::idx_t j_orig, const bool add_to_index)
+    template<typename REAL>
+    idx_t feature_index<REAL>::merge(const idx_t i_orig, const idx_t j_orig, const bool add_to_index)
     {
-        MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
-        const faiss::Index::idx_t i = get_orig_to_internal_node_mapping(i_orig);
-        const faiss::Index::idx_t j = get_orig_to_internal_node_mapping(j_orig);
+        const idx_t i = get_orig_to_internal_node_mapping(i_orig);
+        const idx_t j = get_orig_to_internal_node_mapping(j_orig);
         assert(i != j);
         assert(i < active.size());
         assert(j < active.size());
@@ -254,11 +55,9 @@ namespace DENSE_MULTICUT {
 
         nr_active--;
 
-        const faiss::Index::idx_t new_id = features.size()/d;
+        const idx_t new_id = features.size()/d;
         for(size_t l=0; l<d; ++l)
             features.push_back(features[i*d + l] + features[j*d + l]);
-        if (add_to_index)
-            index->add(1, features.data() + new_id*d);
         active.push_back(true);
         mapping_is_identity = false;
         internal_to_orig_node_mapping[new_id] = vacant_node;
@@ -266,13 +65,14 @@ namespace DENSE_MULTICUT {
         return vacant_node++;
     }
 
-    double feature_index::inner_product(const faiss::Index::idx_t i_orig, const faiss::Index::idx_t j_orig) const
+    template<typename REAL>
+    double feature_index<REAL>::inner_product(const idx_t i_orig, const idx_t j_orig) const
     {
-        const faiss::Index::idx_t i = get_orig_to_internal_node_mapping(i_orig);
-        const faiss::Index::idx_t j = get_orig_to_internal_node_mapping(j_orig);
+        const idx_t i = get_orig_to_internal_node_mapping(i_orig);
+        const idx_t j = get_orig_to_internal_node_mapping(j_orig);
         assert(i < active.size());
         assert(j < active.size());
-        float x = 0.0;
+        double x = 0.0;
         for(size_t l=0; l<d-1; ++l)
             x += features[i*d+l]*features[j*d+l];
         if(track_dist_offset_)
@@ -282,28 +82,32 @@ namespace DENSE_MULTICUT {
         return x;
     }
 
-    bool feature_index::node_active(const faiss::Index::idx_t i_orig) const
+    template<typename REAL>
+    bool feature_index<REAL>::node_active(const idx_t i_orig) const
     {
-        const faiss::Index::idx_t idx = get_orig_to_internal_node_mapping(i_orig);
+        const idx_t idx = get_orig_to_internal_node_mapping(i_orig);
         assert(idx < active.size());
         return active[idx] == true;
     }
 
-    size_t feature_index::max_id_nr() const 
+    template<typename REAL>
+    size_t feature_index<REAL>::max_id_nr() const 
     { 
         assert(active.size() > 0);
         return active.size()-1;
     }
 
-    size_t feature_index::nr_nodes() const
+    template<typename REAL>
+    size_t feature_index<REAL>::nr_nodes() const
     {
         assert(nr_active == std::count(active.begin(), active.end(), true));
         return nr_active;
     }
 
-    std::vector<faiss::Index::idx_t> feature_index::get_active_nodes() const
+    template<typename REAL>
+    std::vector<idx_t> feature_index<REAL>::get_active_nodes() const
     {
-        std::vector<faiss::Index::idx_t> active_nodes;
+        std::vector<idx_t> active_nodes;
         for (int i = 0; i != active.size(); ++i)
         {
             if (active[i])
@@ -315,40 +119,26 @@ namespace DENSE_MULTICUT {
         return active_nodes;
     }
 
-    faiss::Index::idx_t feature_index::get_orig_to_internal_node_mapping(const faiss::Index::idx_t i) const
+    template<typename REAL>
+    idx_t feature_index<REAL>::get_orig_to_internal_node_mapping(const idx_t i) const
     {
         if (mapping_is_identity)
             return i;
         return orig_to_internal_node_mapping[i];
     }
 
-    faiss::Index::idx_t feature_index::get_internal_to_orig_node_mapping(const faiss::Index::idx_t i) const
+    template<typename REAL>
+    idx_t feature_index<REAL>::get_internal_to_orig_node_mapping(const idx_t i) const
     {
         if (mapping_is_identity)
             return i;
         return internal_to_orig_node_mapping[i];
     }
 
-    // std::tuple<std::vector<float>, std::vector<faiss::Index::idx_t>> feature_index::reconstruct_clean_index(const std::vector<faiss::Index::idx_t>& orig_node_ids) const
-    // {
-    //     std::vector<faiss::Index::idx_t> new_node_ids(orig_node_ids);
-    //     std::vector<float> active_features(nr_active * d);
-    //     int i_new = 0;
-    //     for (int i = 0; i != active.size(); ++i)
-    //     {
-    //         if (active[i])
-    //         {
-    //             new_node_ids[i_new] = orig_node_ids[i];
-    //             std::copy(features.begin() + i * d, features.begin() + (i + 1) * d, active_features.begin() + (i_new * d));
-    //             ++i_new;
-    //         }
-    //     }
-    //     return {active_features, new_node_ids};
-    // }
-
-    void feature_index::reconstruct_clean_index()
+    template <typename REAL>
+    void feature_index<REAL>::reconstruct_clean_index()
     {
-        std::vector<float> active_features(nr_active * d);
+        std::vector<REAL> active_features(nr_active * d);
 
         int i_internal_new = 0;
         for (int i = 0; i != active.size(); ++i)
@@ -364,16 +154,76 @@ namespace DENSE_MULTICUT {
             }
         }
         std::swap(features, active_features);
-        // index.reset(index_factory(d, index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT));
-        index = index_factory(d, index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT);
-        index->train(nr_active, features.data());
         active.resize(nr_active);
-        std::fill(active.begin(), active.end(), true);        
-        {
-            MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME2("faiss add");
-            index->add(nr_active, features.data());
-        }
-
+        std::fill(active.begin(), active.end(), true);
         mapping_is_identity = false;
     }
+    
+    // template<typename REAL>
+    // std::tuple<std::vector<idx_t>, std::vector<REAL>> feature_index<REAL>::get_nearest_nodes_brute_force(const std::vector<idx_t>& nodes) const
+    // {
+    //     const auto num_query_nodes = nodes.size();
+    //     std::vector<REAL> final_distances(num_query_nodes, -1.0);
+    //     std::vector<idx_t> final_ids(num_query_nodes);
+    //     const auto active_nodes = get_active_nodes();
+
+    //     #pragma omp parallel for if (num_query_nodes > 100)
+    //     for (size_t c = 0; c != num_query_nodes; ++c)
+    //     {
+    //         const auto orig_node_c = nodes[c];
+    //         for (const auto orig_node_n : active_nodes)
+    //         {
+    //             if (orig_node_c == orig_node_n)
+    //                 continue;
+
+    //             const auto sim = inner_product(orig_node_c, orig_node_n);
+    //             if (sim > final_distances[c])
+    //             {
+    //                 final_distances[c] = sim;
+    //                 final_ids[c] = orig_node_n;
+    //             }
+    //         }
+    //     }
+    //     return {final_ids, final_distances};
+    // }
+
+    // template<typename REAL>
+    // std::tuple<std::vector<idx_t>, std::vector<REAL>> feature_index<REAL>::get_nearest_nodes_brute_force(const std::vector<idx_t>& nodes, const size_t k) const
+    // {
+    //     const auto num_query_nodes = nodes.size();
+    //     std::vector<REAL> final_distances(num_query_nodes * k, -1.0);
+    //     std::vector<idx_t> final_ids(num_query_nodes * k);
+
+    //     using pq_type = std::tuple<REAL, idx_t>;
+    //     auto pq_comp = [](const pq_type& a, const pq_type& b) { return std::get<0>(a) > std::get<0>(b); };
+
+    //     const auto active_nodes = get_active_nodes();
+    //     #pragma omp parallel for if (num_query_nodes > 100)
+    //     for (idx_t c = 0; c != num_query_nodes; ++c)
+    //     {
+    //         std::priority_queue<pq_type, std::vector<pq_type>, decltype(pq_comp)> pq(pq_comp);
+    //         const auto orig_node_c = nodes[c];
+    //         for (const auto orig_node_n : active_nodes)
+    //         {
+    //             if (orig_node_c == orig_node_n)
+    //                 continue;
+
+    //             const auto sim = inner_product(orig_node_c, orig_node_n);
+    //             pq.push({sim, orig_node_n});
+    //             if(pq.size() > k)
+    //                 pq.pop();
+    //         }
+    //         for (int n_index = k - 1; n_index >= 0; --n_index)
+    //         {
+    //             const auto [distance, orig_node_n] = pq.top();
+    //             pq.pop();
+    //             final_distances[c * k + n_index] = distance;
+    //             final_ids[c * k + n_index] = orig_node_n;
+    //         }
+    //     }
+    //     return {final_ids, final_distances};
+    // }
+
+    template class feature_index<float>;
+    template class feature_index<double>;
 }

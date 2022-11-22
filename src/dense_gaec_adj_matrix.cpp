@@ -11,16 +11,16 @@
 
 namespace DENSE_MULTICUT {
 
-    std::vector<size_t> dense_gaec_adj_matrix(const size_t n, const size_t d, std::vector<float> features, const bool track_dist_offset)
+    template<typename REAL>
+    std::vector<size_t> dense_gaec_adj_matrix(const size_t n, const size_t d, std::vector<REAL> features, const bool track_dist_offset)
     {
         MEASURE_FUNCTION_EXECUTION_TIME;
         std::cout << "[dense gaec adj matrix] compute multicut on graph with " << n << " nodes with " << d << " feature dimensions\n";
         double multicut_cost = cost_disconnected(n, d, features, track_dist_offset);
 
-        //std::vector<std::tuple<float,u_int32_t>> edges(((n-1)*n)/2, 0.0);
-        std::vector<std::tuple<float,u_int32_t>> edges(n*n, {0.0, 0});
+        std::vector<std::tuple<REAL,u_int32_t>> edges(n*n, {0.0, 0});
 
-        auto edge_cost = [&](size_t i, size_t j) -> float& {
+        auto edge_cost = [&](size_t i, size_t j) -> REAL& {
             assert(i != j);
             assert(i < n && j < n);
             if(i>j)
@@ -45,7 +45,7 @@ namespace DENSE_MULTICUT {
         auto inner_prod = [&](const u_int32_t i, const u_int32_t j) {
             assert(i != j);
             assert(i < n && j < n);
-            float s = 0.0;
+            double s = 0.0;
             for(size_t l=0; l<d-1; ++l)
                 s += features[i*d+l] * features[j*d+l];
             if (track_dist_offset)
@@ -63,7 +63,7 @@ namespace DENSE_MULTICUT {
             }
 
         struct edge_type_q : public std::array<u_int32_t,2> {    
-            float cost;    
+            REAL cost;    
             u_int32_t stamp;    
         };    
 
@@ -129,4 +129,6 @@ namespace DENSE_MULTICUT {
         return cc_ids; 
     }
 
+    template std::vector<size_t> dense_gaec_adj_matrix(const size_t n, const size_t d, std::vector<float> features, const bool track_dist_offset);
+    template std::vector<size_t> dense_gaec_adj_matrix(const size_t n, const size_t d, std::vector<double> features, const bool track_dist_offset);
 }

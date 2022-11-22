@@ -6,37 +6,42 @@
 
 namespace DENSE_MULTICUT {
 
+    using idx_t = faiss::Index::idx_t;
+
+    template<typename REAL>
     class feature_index {
         public:
-            feature_index(const size_t d, const size_t n, const std::vector<float>& _features, const std::string& index_str, const bool track_dist_offset = false);
+            feature_index() {}
+            feature_index(const size_t d, const size_t n, const std::vector<REAL>& _features, const bool track_dist_offset = false);
 
-            void remove(const faiss::Index::idx_t i);
-            faiss::Index::idx_t merge(const faiss::Index::idx_t i, const faiss::Index::idx_t j, const bool add_to_index = true);
-            double inner_product(const faiss::Index::idx_t i, const faiss::Index::idx_t j) const;
-            std::tuple<std::vector<faiss::Index::idx_t>, std::vector<float>> get_nearest_nodes(const std::vector<faiss::Index::idx_t>& nodes) const;
-            std::tuple<std::vector<faiss::Index::idx_t>, std::vector<float>> get_nearest_nodes(const std::vector<faiss::Index::idx_t>& nodes, const size_t k) const;
-            std::tuple<faiss::Index::idx_t, float> get_nearest_node(const faiss::Index::idx_t node);
+            virtual std::tuple<std::vector<idx_t>, std::vector<REAL>> get_nearest_nodes(const std::vector<idx_t>& nodes) const = 0;
+            virtual std::tuple<std::vector<idx_t>, std::vector<REAL>> get_nearest_nodes(const std::vector<idx_t>& nodes, const size_t k) const = 0;
+            virtual std::tuple<idx_t, REAL> get_nearest_node(const idx_t node) const = 0;
 
-            bool node_active(const faiss::Index::idx_t idx) const;
+            virtual void reconstruct_clean_index();
+            virtual idx_t merge(const idx_t i, const idx_t j, const bool add_to_index = true);
+            virtual void remove(const idx_t i);
+
+            double inner_product(const idx_t i, const idx_t j) const;
+            bool node_active(const idx_t idx) const;
             size_t max_id_nr() const;
             size_t nr_nodes() const;
-            std::vector<faiss::Index::idx_t> get_active_nodes() const;
-            void reconstruct_clean_index();
+            std::vector<idx_t> get_active_nodes() const;
 
-            faiss::Index::idx_t get_orig_to_internal_node_mapping(const faiss::Index::idx_t i) const;
-            faiss::Index::idx_t get_internal_to_orig_node_mapping(const faiss::Index::idx_t i) const;
-        private:
+            idx_t get_orig_to_internal_node_mapping(const idx_t i) const;
+            idx_t get_internal_to_orig_node_mapping(const idx_t i) const;
+
+            virtual ~feature_index() {}
+
+        protected:
             size_t d;
-            // std::unique_ptr<faiss::Index> index;
-            faiss::Index* index;
-            std::vector<float> features;
+            std::vector<REAL> features;
             std::vector<char> active;
-            std::vector<faiss::Index::idx_t> internal_to_orig_node_mapping;
-            std::vector<faiss::Index::idx_t> orig_to_internal_node_mapping;
+            std::vector<idx_t> internal_to_orig_node_mapping;
+            std::vector<idx_t> orig_to_internal_node_mapping;
             bool mapping_is_identity = true;
             size_t nr_active = 0;
-            faiss::Index::idx_t vacant_node = -1;
+            idx_t vacant_node = -1;
             bool track_dist_offset_ = false;
-            const std::string index_str;
     };
 }

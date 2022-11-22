@@ -2,4 +2,5 @@
 #include <vector>
 #include <tuple>
 
-std::tuple<std::vector<float>, size_t, size_t> read_file(const std::string& filename);
+template<typename REAL>
+std::tuple<std::vector<REAL>, size_t, size_t> read_file(const std::string& filename);

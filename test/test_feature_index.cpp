@@ -1,5 +1,6 @@
 #include "test.h"
 #include "feature_index.h"
+#include "feature_index_faiss.h"
 #include <random>
 #include <string>
 #include <vector>
@@ -55,7 +56,7 @@ void test_exact_lookup(const size_t n, const size_t d, const std::string index_s
     for(size_t i=0; i<n*d; ++i)
         features[i] = distr(generator); 
 
-    feature_index index = feature_index(d, n, features, index_str);
+    feature_index_faiss index = feature_index_faiss(d, n, features, index_str);
     const std::vector<std::tuple<size_t, float>> nns_brute_force = get_nearest_nodes_brute_force(n, d, features);
 
     {
