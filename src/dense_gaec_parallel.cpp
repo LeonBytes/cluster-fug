@@ -1,7 +1,6 @@
 #include "feature_index.h"
 #include "feature_index_faiss.h"
 #include "feature_index_brute_force.h"
-#include "feature_index_hnswlib.h"
 #include "dense_gaec_parallel.h"
 #include "maximum_matching_greedy.h"
 #include "dense_multicut_utils.h"
@@ -89,14 +88,6 @@ namespace DENSE_MULTICUT {
     {
         std::cout << "Dense GAEC parallel with faiss index: "<<index_str<<"\n";
         std::unique_ptr<feature_index_faiss> index = std::make_unique<feature_index_faiss>(
-                                                        d, n, features, index_str, track_dist_offset);
-        return dense_gaec_parallel_impl<float>(n, d, *index, features, track_dist_offset);
-    }
-
-    std::vector<size_t> dense_gaec_parallel_hnswlib(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset)
-    {
-        std::cout << "Dense GAEC parallel with hnswlib index: "<<index_str<<"\n";
-        std::unique_ptr<feature_index_hnswlib> index = std::make_unique<feature_index_hnswlib>(
                                                         d, n, features, index_str, track_dist_offset);
         return dense_gaec_parallel_impl<float>(n, d, *index, features, track_dist_offset);
     }

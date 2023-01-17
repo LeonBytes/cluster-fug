@@ -25,33 +25,36 @@ namespace DENSE_MULTICUT {
 
     feature_index_faiss::feature_index_faiss(const size_t _d, const size_t n, const std::vector<float>& _features, const std::string& _index_str, const bool track_dist_offset)
         : feature_index<float>(_d, n, _features, track_dist_offset),
-        index(index_factory(_d, _index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT)),
         index_str(_index_str)
     {
-        #ifdef FAISS_ENABLE_GPU
-            int ngpus = faiss::gpu::getNumDevices();
-            printf("Number of GPUs: %d\n", ngpus);
-            if (ngpus > 0 && _index_str == "Flat")
-            {
-                try
-                {
-                    faiss::gpu::StandardGpuResources res;
-                    // make it into a gpu index
-                    index = faiss::gpu::index_cpu_to_gpu(&res, 0, index);
-                    std::cout<<"Using GPU index.\n";
-                }
-                catch(const std::exception& e)
-                {
-                    std::cerr << e.what() << '\n';
-                    std::cout<<"Not using GPU index\n.";
-                }            
-            }
-        #endif
-
-        index->train(n, features.data());
+        if (index_str != "faiss_brute_force")
         {
-            MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME2("faiss add");
-            index->add(n, features.data());
+            index = std::shared_ptr<faiss::Index>(faiss::index_factory(d, index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT));
+            #ifdef FAISS_ENABLE_GPU
+                int ngpus = faiss::gpu::getNumDevices();
+                printf("Number of GPUs: %d\n", ngpus);
+                if (ngpus > 0 && _index_str == "Flat")
+                {
+                    try
+                    {
+                        faiss::gpu::StandardGpuResources res;
+                        // make it into a gpu index
+                        index.reset(faiss::gpu::index_cpu_to_gpu(&res, 0, index.get()));
+                        std::cout<<"Using GPU index.\n";
+                    }
+                    catch(const std::exception& e)
+                    {
+                        std::cerr << e.what() << '\n';
+                        std::cout<<"Not using GPU index\n.";
+                    }            
+                }
+            #endif
+
+            index->train(n, features.data());
+            {
+                MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME2("faiss add");
+                index->add(n, features.data());
+            }
         }
         id_selector = new IDSelectorCustom(n);
     }
@@ -62,23 +65,37 @@ namespace DENSE_MULTICUT {
         MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
         const faiss::Index::idx_t new_internal_id = features.size()/d;
         const idx_t new_orig_id = feature_index<float>::merge(i_orig, j_orig);
-        if (add_to_index)
+        if (add_to_index && index_str != "faiss_brute_force")
             index->add(1, features.data() + new_internal_id * d);
         id_selector->merge(this->get_orig_to_internal_node_mapping(i_orig), this->get_orig_to_internal_node_mapping(j_orig));
         return new_orig_id;
     }
 
-    void feature_index_faiss::reconstruct_clean_index()
+    void feature_index_faiss::reconstruct_clean_index(std::string new_index_str)
     {
         feature_index<float>::reconstruct_clean_index();
-        index = std::shared_ptr<faiss::Index>(faiss::index_factory(d, index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT));
-        index->train(nr_active, features.data());
+        if (new_index_str == "")
+            new_index_str = index_str;
+        index_str = new_index_str;
+        if (index_str != "faiss_brute_force")
+        {
+            index = std::shared_ptr<faiss::Index>(faiss::index_factory(d, index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT));
+            index->train(nr_active, features.data());
+            index->add(nr_active, features.data());
+        }
+        delete id_selector;
         id_selector = new IDSelectorCustom(nr_active);
     }
 
     std::tuple<idx_t, float> feature_index_faiss::get_nearest_node(const idx_t id_orig) const
     {
         MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+        if (index_str == "faiss_brute_force")
+        {
+            const std::tuple<std::vector<idx_t>, std::vector<float>> result = get_nearest_nodes_brute_force({id_orig}, 1);
+            return {std::get<0>(result)[0], std::get<1>(result)[0]};
+        }
+
         const size_t id = this->get_orig_to_internal_node_mapping(id_orig);
         std::vector<float> query_features(features.begin() + id * d, features.begin() + (id + 1) * d);
         if (track_dist_offset_)
@@ -109,7 +126,7 @@ namespace DENSE_MULTICUT {
     {
         MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME2("faiss get nearest nodes");
         assert(nodes_orig.size() > 0);
-        if (index_str == "Flat")
+        if (index_str == "faiss_brute_force")
             return get_nearest_nodes_brute_force(nodes_orig, 1);
         //std::cout << "[feature index] search nearest neighbors for " << nodes.size() << " nodes\n";
 
@@ -174,7 +191,7 @@ namespace DENSE_MULTICUT {
         assert(k > 0);
         assert(k < nr_nodes());
         assert(nodes_orig.size() > 0);
-        if (index_str == "Flat")
+        if (index_str == "faiss_brute_force")
             return get_nearest_nodes_brute_force(nodes_orig, k);
 
         std::vector<idx_t> return_nns(k * nodes_orig.size());
@@ -276,7 +293,7 @@ namespace DENSE_MULTICUT {
         size_t out_index_1d = 0;
         for (size_t c = 0; c != num_query_nodes; ++c)
         {
-            const auto self = get_orig_to_internal_node_mapping(nodes[c]);
+            const auto self = nodes[c];
             size_t num_added = 0;
             for (size_t n = 0; n != k + 1; ++n, ++index_1d)
             {
@@ -286,7 +303,9 @@ namespace DENSE_MULTICUT {
                 const auto neighbour = this->get_internal_to_orig_node_mapping(ids[index_1d]);
                 if (neighbour == self)
                     continue;
-                final_distances[out_index_1d] = this->inner_product(nodes[c], neighbour); // distances[index_1d];
+                // distance ideally should be distances[index_1d] but it is not accurate due to floating point calculation.
+                final_distances[out_index_1d] = this->inner_product(nodes[c], neighbour); 
+                // assert(std::abs(this->inner_product(self, neighbour) - distances[index_1d]) <= );
                 final_ids[out_index_1d] = neighbour;
                 out_index_1d++;
                 num_added++;
@@ -294,6 +313,21 @@ namespace DENSE_MULTICUT {
         }
         return {final_ids, final_distances};
     }
+
+    double feature_index_faiss::inner_product(const idx_t i_orig, const idx_t j_orig) const
+    {
+        const idx_t i = get_orig_to_internal_node_mapping(i_orig);
+        const idx_t j = get_orig_to_internal_node_mapping(j_orig);
+        assert(i < active.size());
+        assert(j < active.size());
+        double x = faiss::fvec_inner_product(&features[i*d], &features[j*d], d - 1);
+        if(track_dist_offset_)
+            x -= features[i*d+d-1]*features[j*d+d-1];
+        else
+            x += features[i*d+d-1]*features[j*d+d-1];
+        return x;
+    }
+
     feature_index_faiss::~feature_index_faiss()
     {
         delete id_selector;

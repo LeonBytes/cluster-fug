@@ -86,8 +86,9 @@ namespace DENSE_MULTICUT {
     bool feature_index<REAL>::node_active(const idx_t i_orig) const
     {
         const idx_t idx = get_orig_to_internal_node_mapping(i_orig);
-        assert(idx < active.size());
-        return active[idx] == true;
+        if (idx < active.size())
+            return active[idx] == true;
+        return false;
     }
 
     template<typename REAL>
@@ -136,10 +137,11 @@ namespace DENSE_MULTICUT {
     }
 
     template <typename REAL>
-    void feature_index<REAL>::reconstruct_clean_index()
+    void feature_index<REAL>::reconstruct_clean_index(std::string new_index_str)
     {
         std::vector<REAL> active_features(nr_active * d);
 
+        std::vector<idx_t> internal_to_orig_node_mapping_new(nr_active);
         int i_internal_new = 0;
         for (int i = 0; i != active.size(); ++i)
         {
@@ -147,12 +149,13 @@ namespace DENSE_MULTICUT {
             {
                 const auto i_orig = get_internal_to_orig_node_mapping(i);
                 orig_to_internal_node_mapping[i_orig] = i_internal_new;
-                internal_to_orig_node_mapping[i_internal_new] = i_orig;
+                internal_to_orig_node_mapping_new[i_internal_new] = i_orig;
                 std::copy(features.begin() + i * d, features.begin() + (i + 1) * d, active_features.begin() + (i_internal_new * d));
                 active[i] = false;
                 ++i_internal_new;
             }
         }
+        internal_to_orig_node_mapping = internal_to_orig_node_mapping_new;
         std::swap(features, active_features);
         active.resize(nr_active);
         std::fill(active.begin(), active.end(), true);

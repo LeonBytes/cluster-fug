@@ -1,7 +1,6 @@
-#include "dense_gaec_incremental_nn.h"
+#include "dense_laec_inc_nn.h"
 #include "feature_index.h"
 #include "feature_index_faiss.h"
-#include "feature_index_hnswlib.h"
 #include "feature_index_brute_force.h"
 #include "incremental_nns.h"
 #include "dense_multicut_utils.h"
@@ -49,14 +48,18 @@ namespace DENSE_MULTICUT {
     };
 
     template<typename REAL>
-    std::vector<size_t> dense_gaec_incremental_nn_impl(const size_t n, const size_t d, feature_index<REAL>& index, std::vector<REAL> features, const size_t k_in, const bool track_dist_offset)
+    std::vector<size_t> dense_laec_inc_nn_impl(
+        const size_t n, const size_t d, feature_index<REAL>& index, const std::vector<REAL>& features, const size_t k_in, 
+        const bool track_dist_offset, const std::string index_str_after, const size_t k_cap)
     {
         MEASURE_FUNCTION_EXECUTION_TIME;
+        MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
         const size_t k = std::min(n - 1, k_in);
+        const size_t k_cap_eff = std::min(n - 1, k_cap);
+        
         assert(features.size() == n*d);
 
-        std::cout << "[dense gaec incremental nn] Find multicut for " << n << " nodes with features of dimension " << d << "\n";
-
+        std::cout << "[dense laec] Find multicut for " << n << " nodes with features of dimension " << d << " with k " <<k<<" and K "<<k_cap_eff<<"\n";
         double multicut_cost = cost_disconnected(n, d, features, track_dist_offset);
 
         const size_t max_nr_ids = 2*n;
@@ -70,16 +73,26 @@ namespace DENSE_MULTICUT {
             std::vector<faiss::Index::idx_t> all_indices(n);
             std::iota(all_indices.begin(), all_indices.end(), 0);
             const auto [nns, distances] = index.get_nearest_nodes(all_indices, k);
-            std::cout<<"[dense gaec incremental nn] Initial NN search complete\n";
-            nn_graph = incremental_nns(all_indices, nns, distances, n, k);
+            std::cout<<"[dense laec] Initial NN search complete\n";
+            nn_graph = incremental_nns(all_indices, nns, distances, n, k, k_cap_eff);
             size_t index_1d = 0;
             for(size_t i=0; i<n; ++i)
                 for(size_t i_k=0; i_k < k; ++i_k, ++index_1d)
                     if(distances[index_1d] > 0.0)
                         pq.push({distances[index_1d], {i, nns[index_1d]}});
         }
+        auto insert_into_pq = [&](const std::vector<std::tuple<size_t, size_t, REAL>>& edges) {
+            for (const auto [i, j, cost]: edges)
+            {
+                assert(index.node_active(i));
+                assert(index.node_active(j));
+                pq.push({cost, {i, j}});
+            }
+        };
+
         const size_t max_pq_size = pq.size() * 10;
 
+        size_t current_pq_size = pq.size();
         bool completed = false;
         while (!completed)
         {        
@@ -96,17 +109,13 @@ namespace DENSE_MULTICUT {
 
                     uf.merge(i, new_id);
                     uf.merge(j, new_id);
-                    const std::unordered_map<size_t, REAL> nn_ij = nn_graph.merge_nodes(i, j, new_id, index, false);
+                    insert_into_pq(nn_graph.merge_nodes(i, j, new_id, index, false));
                     multicut_cost -= distance;
-
-                    if(index.nr_nodes() > 1)
-                        for (auto const& [nn_new, new_cost] : nn_ij)
-                            pq.push({new_cost, {new_id, nn_new}});
                     completed = false;
                 }
                 // if (pq.size() > max_pq_size)
                 // {
-                //     std::cout<<"[dense gaec incremental nn] cleaning-up PQ with size: "<<pq.size();
+                //     std::cout<<"[dense laec] cleaning-up PQ with size: "<<pq.size();
                 //     pq.remove_invalid(index);
                 //     std::cout<<", new PQ size: "<<pq.size()<<"\n";
                 // }
@@ -114,20 +123,12 @@ namespace DENSE_MULTICUT {
 
             // Rebuild feature_index and insert NNs into PQ:
             std::cout<<"Objective: "<<multicut_cost<<". Number of clusters: "<<index.nr_nodes()<<".\n";
-            auto insert_into_pq = [&](const std::vector<std::tuple<size_t, size_t, REAL>>& edges) {
-                for (const auto [i, j, cost]: edges)
-                {
-                    assert(index.node_active(i));
-                    assert(index.node_active(j));
-                    pq.push({cost, {i, j}});
-                }
-            };
-            insert_into_pq(nn_graph.find_existing_contractions(index));
+            // insert_into_pq(nn_graph.find_existing_contractions(index));
             // if ((index.nr_nodes() < 0.9f * index.max_id_nr() && index.nr_nodes() > 1000) || pq.size() == 0)
             if (pq.size() == 0)
             {
-                index.reconstruct_clean_index();
-                std::cout<<"Reconstructed index with "<<index.nr_nodes()<<" nodes.\n";
+                index.reconstruct_clean_index(index_str_after);
+                std::cout<<"Reconstructed index of type "<<index_str_after<<" with "<<index.nr_nodes()<<" nodes.\n";
                 insert_into_pq(nn_graph.compute_new_contractions(index));
             }
 
@@ -135,47 +136,49 @@ namespace DENSE_MULTICUT {
             completed = pq.size() == 0;
         }
 
-        std::cout << "[dense gaec incremental nn] final nr clusters = " << index.nr_nodes() << "\n";
-        std::cout << "[dense gaec incremental nn] final multicut cost = " << multicut_cost << "\n";
+        std::cout << "[dense laec] final nr clusters = " << index.nr_nodes() << "\n";
+        std::cout << "[dense laec] final multicut cost = " << multicut_cost << "\n";
 
         std::vector<size_t> component_labeling(n);
         for(size_t i=0; i<n; ++i)
             component_labeling[i] = uf.find(i);
 
-        // std::cout << "[dense gaec incremental nn] final multicut computed cost = " << labeling_cost(component_labeling, n, d, features, track_dist_offset) << "\n";
+        // std::cout << "[dense laec] final multicut computed cost = " << labeling_cost(component_labeling, n, d, features, track_dist_offset) << "\n";
         return component_labeling;
     }
 
-    std::vector<size_t> dense_gaec_incremental_nn_faiss(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset, const size_t k_in)
+    std::vector<size_t> dense_laec_inc_nn_faiss(
+        const size_t n, const size_t d, const std::vector<float>& features, const std::string index_str, const bool track_dist_offset, const size_t k_in, const size_t k_cap)
     {
-        std::cout << "Dense GAEC parallel with faiss index: "<<index_str<<"\n";
+        MEASURE_FUNCTION_EXECUTION_TIME;
+        MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+        std::cout << "Dense LAEC with faiss index: "<<index_str<<"\n";
         std::unique_ptr<feature_index_faiss> index = std::make_unique<feature_index_faiss>(d, n, features, index_str, track_dist_offset);
-        return dense_gaec_incremental_nn_impl<float>(n, d, *index, features, k_in, track_dist_offset);
+        return dense_laec_inc_nn_impl<float>(n, d, *index, features, k_in, track_dist_offset, index_str, k_cap);
     }
 
-    std::vector<size_t> dense_gaec_incremental_nn_hnswlib(const size_t n, const size_t d, std::vector<float> features, const std::string index_str, const bool track_dist_offset, const size_t k_in)
+    std::vector<size_t> dense_laec_inc_nn_faiss_bf_after(
+        const size_t n, const size_t d, const std::vector<float>& features, const std::string index_str, const bool track_dist_offset, const size_t k_in, const size_t k_cap)
     {
-        std::cout << "Dense GAEC parallel with hnswlib index: "<<index_str<<"\n";
-        std::unique_ptr<feature_index_hnswlib> index = std::make_unique<feature_index_hnswlib>(d, n, features, index_str, track_dist_offset);
-        return dense_gaec_incremental_nn_impl<float>(n, d, *index, features, k_in, track_dist_offset);
+        MEASURE_FUNCTION_EXECUTION_TIME;
+        MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+        std::cout << "Dense LAEC with faiss index: "<<index_str<<", and faiss_brute_force for later iterations\n";
+        std::unique_ptr<feature_index_faiss> index = std::make_unique<feature_index_faiss>(d, n, features, index_str, track_dist_offset);
+        return dense_laec_inc_nn_impl<float>(n, d, *index, features, k_in, track_dist_offset, "faiss_brute_force", k_cap);
     }
 
     template<typename REAL>
-    std::vector<size_t> dense_gaec_incremental_nn_brute_force(const size_t n, const size_t d, std::vector<REAL> features, const bool track_dist_offset, const size_t k_in)
+    std::vector<size_t> dense_laec_inc_nn_brute_force(
+        const size_t n, const size_t d, const std::vector<REAL>& features, const bool track_dist_offset, const size_t k_in, const size_t k_cap)
     {
-        std::cout << "Dense GAEC with brute force\n";
+        MEASURE_FUNCTION_EXECUTION_TIME;
+        MEASURE_CUMULATIVE_FUNCTION_EXECUTION_TIME;
+        std::cout << "Dense LAEC with brute force\n";
         std::unique_ptr<feature_index_brute_force<REAL>> index = std::make_unique<feature_index_brute_force<REAL>>(
                                                                     d, n, features, track_dist_offset);
-        return dense_gaec_incremental_nn_impl<REAL>(n, d, *index, features, k_in, track_dist_offset);
+        return dense_laec_inc_nn_impl<REAL>(n, d, *index, features, k_in, track_dist_offset, "brute_force", k_cap);
     }
 
-    template std::vector<size_t> dense_gaec_incremental_nn_brute_force(const size_t, const size_t, std::vector<float>, const bool, const size_t);
-    template std::vector<size_t> dense_gaec_incremental_nn_brute_force(const size_t, const size_t, std::vector<double>, const bool, const size_t);
+    template std::vector<size_t> dense_laec_inc_nn_brute_force(const size_t, const size_t, const std::vector<float>&, const bool, const size_t, const size_t);
+    template std::vector<size_t> dense_laec_inc_nn_brute_force(const size_t, const size_t, const std::vector<double>&, const bool, const size_t, const size_t);
 }
-
-
-// TODO:
-// 1. Remove features of inactive nodes.
-// 2. Reinitialize feature_index upon termination to check if all costs still < 0.
-// 3. 2nd element of PQ can give a cost value, stating only find NN above this cost. As otherwise newly added edge is not going to be contracted now anyway.
-

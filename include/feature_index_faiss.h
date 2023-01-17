@@ -26,7 +26,9 @@ namespace DENSE_MULTICUT {
             virtual std::tuple<std::vector<idx_t>, std::vector<float>> get_nearest_nodes(const std::vector<idx_t>& nodes, const size_t k) const;
             virtual std::tuple<idx_t, float> get_nearest_node(const idx_t node) const;
             virtual idx_t merge(const idx_t i, const idx_t j, const bool add_to_index = true);
-            virtual void reconstruct_clean_index();
+            virtual void reconstruct_clean_index(std::string new_index_str = "");
+
+            double inner_product(const idx_t i, const idx_t j) const;
 
             virtual ~feature_index_faiss();
 
@@ -35,7 +37,7 @@ namespace DENSE_MULTICUT {
             std::tuple<std::vector<idx_t>, std::vector<float>> get_nearest_nodes_brute_force(const std::vector<idx_t>& nodes, const size_t k) const;
 
             std::shared_ptr<faiss::Index> index;
-            const std::string index_str;
+            std::string index_str;
             IDSelectorCustom* id_selector;
     };
 }

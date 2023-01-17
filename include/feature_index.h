@@ -18,7 +18,7 @@ namespace DENSE_MULTICUT {
             virtual std::tuple<std::vector<idx_t>, std::vector<REAL>> get_nearest_nodes(const std::vector<idx_t>& nodes, const size_t k) const = 0;
             virtual std::tuple<idx_t, REAL> get_nearest_node(const idx_t node) const = 0;
 
-            virtual void reconstruct_clean_index();
+            virtual void reconstruct_clean_index(std::string new_index_str="");
             virtual idx_t merge(const idx_t i, const idx_t j, const bool add_to_index = true);
             virtual void remove(const idx_t i);
 

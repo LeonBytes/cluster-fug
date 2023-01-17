@@ -110,7 +110,7 @@ class CMakeBuild(build_ext):
 
 setup(
     name='DENSE MULTICUT',
-    version='0.0.1',
+    version='0.0.3',
     description='Bindings for dense multicut.',
     packages=find_packages('.'),
     ext_modules=[CMakeExtension(name='dense_multicut_py')],

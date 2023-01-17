@@ -12,7 +12,7 @@
 namespace DENSE_MULTICUT {
 
     template<typename REAL>
-    std::vector<size_t> dense_gaec_adj_matrix(const size_t n, const size_t d, std::vector<REAL> features, const bool track_dist_offset)
+    std::vector<size_t> dense_gaec_adj_matrix(const size_t n, const size_t d, const std::vector<REAL>& features, const bool track_dist_offset)
     {
         MEASURE_FUNCTION_EXECUTION_TIME;
         std::cout << "[dense gaec adj matrix] compute multicut on graph with " << n << " nodes with " << d << " feature dimensions\n";
@@ -95,7 +95,7 @@ namespace DENSE_MULTICUT {
 
             uf.merge(i,j);
             multicut_cost -= edge_cost(i,j);
-            // std::cout << "[dense multicut adjacency matrix] contracting edge " << i << " and " << j << " with edge cost " << edge_cost(i,j) << ", multicut_cost "<< multicut_cost <<", stamp "<< edge_stamp(i,j) <<"\n";
+            // std::cout << "[dense multicut adjacency matrix] contracting edge " << i << " and " << j << " with edge cost " << edge_cost(i,j) <<"\n";
             active[j] = false;
 
             // contract edge
@@ -129,6 +129,6 @@ namespace DENSE_MULTICUT {
         return cc_ids; 
     }
 
-    template std::vector<size_t> dense_gaec_adj_matrix(const size_t n, const size_t d, std::vector<float> features, const bool track_dist_offset);
-    template std::vector<size_t> dense_gaec_adj_matrix(const size_t n, const size_t d, std::vector<double> features, const bool track_dist_offset);
+    template std::vector<size_t> dense_gaec_adj_matrix(const size_t n, const size_t d, const std::vector<float>& features, const bool track_dist_offset);
+    template std::vector<size_t> dense_gaec_adj_matrix(const size_t n, const size_t d, const std::vector<double>& features, const bool track_dist_offset);
 }
