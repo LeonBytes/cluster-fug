@@ -2,8 +2,10 @@
 #include "feature_index_faiss.h"
 #include "time_measure_util.h"
 #include <faiss/index_factory.h>
+#ifdef FAISS_ENABLE_GPU
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/GpuCloner.h>
+#endif
 #include <faiss/impl/AuxIndexStructures.h>
 #include <faiss/utils/distances.h>
 #include <cassert>
@@ -31,23 +33,23 @@ namespace DENSE_MULTICUT {
         {
             index = std::shared_ptr<faiss::Index>(faiss::index_factory(d, index_str.c_str(), faiss::MetricType::METRIC_INNER_PRODUCT));
             #ifdef FAISS_ENABLE_GPU
-                int ngpus = faiss::gpu::getNumDevices();
-                printf("Number of GPUs: %d\n", ngpus);
-                if (ngpus > 0 && _index_str == "Flat")
+                try
                 {
-                    try
+                    int ngpus = faiss::gpu::getNumDevices();
+                    printf("Number of GPUs: %d\n", ngpus);
+                    if (ngpus > 0 && _index_str == "Flat")
                     {
                         faiss::gpu::StandardGpuResources res;
                         // make it into a gpu index
                         index.reset(faiss::gpu::index_cpu_to_gpu(&res, 0, index.get()));
                         std::cout<<"Using GPU index.\n";
                     }
-                    catch(const std::exception& e)
-                    {
-                        std::cerr << e.what() << '\n';
-                        std::cout<<"Not using GPU index\n.";
-                    }            
                 }
+                catch(const std::exception& e)
+                {
+                    std::cerr << e.what() << '\n';
+                    std::cout<<"Not using GPU index\n.";
+                }            
             #endif
 
             index->train(n, features.data());

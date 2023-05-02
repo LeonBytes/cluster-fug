@@ -8,6 +8,7 @@
 #include <queue>
 #include <cassert>
 #include <functional>
+#include <chrono>
 
 namespace DENSE_MULTICUT {
 
@@ -55,12 +56,17 @@ namespace DENSE_MULTICUT {
             return s;
         };
 
+        std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+        #pragma omp parallel for if (n > 100)
         for(u_int32_t i=0; i<n; ++i)
             for(u_int32_t j=0; j<i; ++j)
             {
                 edge_cost(i,j) = inner_prod(i,j);
                 //std::cout << "[dense multicut adjacency matrix] inner prod between " << i << " and " << j << " = " << inner_prod(i,j) << " = " << edge_cost(i,j) << "\n";
             }
+        std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+        auto time = std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count();
+        std::cout<<"Inner product time (ms): "<<time<<"\n";
 
         struct edge_type_q : public std::array<u_int32_t,2> {    
             REAL cost;    

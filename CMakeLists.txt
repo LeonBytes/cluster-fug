@@ -17,7 +17,7 @@ else()
 endif()
 
 
-option(FAISS_ENABLE_GPU "" ON)
+option(FAISS_ENABLE_GPU "FAISS_ENABLE_GPU" OFF)
 if(FAISS_ENABLE_GPU)
     add_definitions(-DFAISS_ENABLE_GPU)
 endif()

@@ -1,8 +1,10 @@
 #include "feature_index.h"
 #include "time_measure_util.h"
 #include <faiss/index_factory.h>
+#ifdef FAISS_ENABLE_GPU
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/GpuCloner.h>
+#endif
 #include <faiss/impl/AuxIndexStructures.h>
 #include <faiss/utils/distances.h>
 #include <cassert>
