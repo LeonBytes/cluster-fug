@@ -43,9 +43,10 @@ Afterwards run (for our **DAppLAEC** algorithm):
 ```
 Other algorithms mentioned in the paper can be run as:
 
-	```bash
+```bash
 ./src/dense_multicut_text_input <PATH_TO_PROBLEM_INSTANCE_TXT> <INDEX_TYPE> <CONTRACTION_TYPE>
-	```
+```
+where `INDEX_TYPE` and `CONTRACTION_TYPE` can be choosen as:
 | Algorithm  | INDEX_TYPE  | CONTRACTION_TYPE |
 |---|---|---|
 | GAEC |  brute_force | adj_matrix  |
