@@ -49,7 +49,7 @@ Other algorithms mentioned in the paper can be run as:
 where `INDEX_TYPE` and `CONTRACTION_TYPE` can be choosen as:
 | Algorithm  | INDEX_TYPE  | CONTRACTION_TYPE |
 |---|---|---|
-| GAEC |  brute_force | adj_matrix  |
+| GAEC |  brute_force | gaec  |
 | DGAEC | faiss_brute_force | dense_gaec   |
 | DGAECInc | faiss_brute_force | dense_gaec_inc   |
 | LGAEC | faiss_brute_force | dense_laec   |
@@ -57,7 +57,7 @@ where `INDEX_TYPE` and `CONTRACTION_TYPE` can be choosen as:
 
 For example to run **GAEC**:
 	```bash
-./src/dense_multicut_text_input <PATH_TO_PROBLEM_INSTANCE_TXT> brute_force adj_matrix
+./src/dense_multicut_text_input <PATH_TO_PROBLEM_INSTANCE_TXT> brute_force gaec
 	```
  For more information run: 
 ```bash
