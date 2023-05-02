@@ -18,15 +18,13 @@ std::vector<size_t> run_faiss_solvers(const std::vector<float> features, const s
                                      const bool track_dist_offset = false, const size_t k_cap = 10)
 {
     std::vector<size_t> labeling;
-    if (solver_type ==  "gaec")
+    if (solver_type ==  "dense_gaec")
         labeling = dense_gaec_faiss(num_nodes, dim, features, index_str, track_dist_offset);
-    else if (solver_type ==  "gaec_inc")
+    else if (solver_type ==  "dense_gaec_inc")
         labeling = dense_gaec_inc_nn_faiss(num_nodes, dim, features, index_str, track_dist_offset, k_inc_nn, k_cap);
-    else if (solver_type ==  "parallel")
-        labeling = dense_gaec_parallel_faiss(num_nodes, dim, features, index_str, track_dist_offset);
-    else if (solver_type ==  "laec")
+    else if (solver_type ==  "dense_laec")
         labeling = dense_laec_inc_nn_faiss(num_nodes, dim, features, index_str, track_dist_offset, k_inc_nn, k_cap);
-    else if (solver_type ==  "laec_bf_later")
+    else if (solver_type ==  "dense_laec_bf_later")
         labeling = dense_laec_inc_nn_faiss_bf_after(num_nodes, dim, features, index_str, track_dist_offset, k_inc_nn, k_cap);
     else
         throw std::runtime_error("Unknown solver type: " + solver_type);
@@ -38,15 +36,13 @@ std::vector<size_t> run_brute_force_solvers(const std::vector<REAL> features, co
                     const std::string solver_type, const int k_inc_nn = 10, const bool track_dist_offset = false, const size_t k_cap = 10)
 {
     std::vector<size_t> labeling;
-    if (solver_type ==  "adj_matrix")
+    if (solver_type ==  "gaec")
         labeling = dense_gaec_adj_matrix<REAL>(num_nodes, dim, features, track_dist_offset);
-    else if (solver_type ==  "gaec")
+    else if (solver_type ==  "dense_gaec")
         labeling = dense_gaec_brute_force<REAL>(num_nodes, dim, features, track_dist_offset);
-    else if (solver_type ==  "gaec_inc")
+    else if (solver_type ==  "dense_gaec_inc")
         labeling = dense_gaec_inc_nn_brute_force<REAL>(num_nodes, dim, features, track_dist_offset, k_inc_nn, k_cap);
-    else if (solver_type ==  "parallel")
-        labeling = dense_gaec_parallel_brute_force<REAL>(num_nodes, dim, features, track_dist_offset);
-    else if (solver_type ==  "laec")
+    else if (solver_type ==  "dense_laec")
         labeling = dense_laec_inc_nn_brute_force<REAL>(num_nodes, dim, features, track_dist_offset, k_inc_nn, k_cap);
     else
         throw std::runtime_error("Unknown solver type: " + solver_type);
@@ -57,7 +53,7 @@ PYBIND11_MODULE(dense_multicut_py, m) {
     m.doc() = "Bindings for dense multicut. Available index types: \n"
     "brute_force\n, faiss_brute_force\n, Flat\n, HNSW\n"
     "Available solver types: \n "
-    "adj_matrix\n, gaec\n, gaec_inc\n, parallel\n, laec, laec_bf_later\n"
+    "gaec\n, dense_gaec\n, dense_gaec_inc\n, dense_laec, dense_laec_bf_later\n"
     "all index except brute_force need float, brute_force also suppports double.";
     m.def("dense_multicut_double", [](
         std::vector<double> features, const int num_nodes, int dim, const float dist_offset, const size_t k_inc_nn, const std::string index_type, const std::string solver_type, const size_t k_cap) 
