@@ -52,8 +52,8 @@ where `INDEX_TYPE` and `CONTRACTION_TYPE` can be choosen as:
 | GAEC |  brute_force | gaec  |
 | DGAEC | faiss_brute_force | dense_gaec   |
 | DGAECInc | faiss_brute_force | dense_gaec_inc   |
-| LGAEC | faiss_brute_force | dense_laec   |
-| DGAEC | HNSW | dense_laec_bf_later   |
+| DLAEC | faiss_brute_force | dense_laec   |
+| DAppLAEC | HNSW | dense_laec_bf_later   |
 
 For example to run **GAEC**:
 	```bash
@@ -80,6 +80,9 @@ INDEX_TYPE, CONTRACTION_TYPE = "HNSW", "dense_laec_bf_later"
 features = np.random.rand(num_nodes, dim).astype(np.float32)
 node_labels = dense_multicut_py.dense_multicut(features.flatten(), num_nodes, dim, affinity_strength, k, INDEX_TYPE, CONTRACTION_TYPE, k_cap)
 ```
+
+### Benchmark instances:
+Instances used in the paper can be obtained from [structured-prediction-prob-archive](https://arxiv.org/abs/2202.03574).
 
 ## References
 If you use this work please cite as
