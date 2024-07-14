@@ -75,26 +75,25 @@ class CMakeBuild(build_ext):
 
     # def _prepare_environment(self):
     #     gcc, gpp = self._find_suitable_gcc_gpp()
-
+    #
     #     gcc_path = subprocess.check_output(f"which {gcc}", shell=True).decode("utf-8").rstrip()
     #     gpp_path = subprocess.check_output(f"which {gpp}", shell=True).decode("utf-8").rstrip()
-
+    #
     #     os.environ["CC"] = gcc_path
     #     os.environ["CXX"] = gpp_path
-    
+
     def _prepare_environment(self):
-    gcc, gpp = self._find_suitable_gcc_gpp()
-    
-    if platform.system() == "Windows":
-        gcc_path = subprocess.check_output(f"where {gcc}", shell=True).decode("utf-8").rstrip()
-        gpp_path = subprocess.check_output(f"where {gpp}", shell=True).decode("utf-8").rstrip()
-    else:
-        gcc_path = subprocess.check_output(f"which {gcc}", shell=True).decode("utf-8").rstrip()
-        gpp_path = subprocess.check_output(f"which {gpp}", shell=True).decode("utf-8").rstrip()
+        gcc, gpp = self._find_suitable_gcc_gpp()
 
-    os.environ["CC"] = gcc_path
-    os.environ["CXX"] = gpp_path
+        if platform.system() == "Windows":
+            gcc_path = subprocess.check_output(f"where {gcc}", shell=True).decode("utf-8").rstrip()
+            gpp_path = subprocess.check_output(f"where {gpp}", shell=True).decode("utf-8").rstrip()
+        else:
+            gcc_path = subprocess.check_output(f"which {gcc}", shell=True).decode("utf-8").rstrip()
+            gpp_path = subprocess.check_output(f"which {gpp}", shell=True).decode("utf-8").rstrip()
 
+        os.environ["CC"] = gcc_path
+        os.environ["CXX"] = gpp_path
 
     def build_extension(self, ext):
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
